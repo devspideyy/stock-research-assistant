@@ -13,8 +13,10 @@ validated live investment-recommendation system. Additional review found failure
 the existing tests did not cover. The number of tests must not be presented as proof
 that financial assumptions or provider integrations are correct.
 
-**This audit did not modify application runtime behaviour.** Findings below remain
-open. A fixture script and raw results accompany this report.
+**This audit records the original baseline.** A subsequent implementation pass addresses
+A01–A03 and A05–A07; A04 is deferred and its dashboard lab has been removed.
+See [implementation follow-up](IMPLEMENTATION_FOLLOWUP.md) for current status and limits.
+The original raw results below are preserved as historical evidence.
 
 ## Confirmed findings
 

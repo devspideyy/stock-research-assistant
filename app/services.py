@@ -47,6 +47,9 @@ def build_evidence(
     news: list[dict] | None = None,
     symbol: str = "DEMO",
     fundamentals: dict | None = None,
+    *,
+    is_synthetic: bool | None = None,
+    decision_time: str | None = None,
 ) -> dict:
     """Build a dated card, including opposing/missing evidence and invalidation.
 
@@ -61,10 +64,15 @@ def build_evidence(
     analysis = analysis or {}
     news = list(news or [])
     fundamentals = fundamentals or {}
-    source_text = json.dumps(
-        {"analysis": analysis.get("source"), "news": news, "fundamentals": fundamentals}
-    ).lower()
-    synthetic = "synthetic" in source_text or "demo" in str(analysis.get("mode", "")).lower()
+    # Provenance is supplied by the dataset, never guessed from headline text.
+    synthetic = is_synthetic
+    if (
+        any(item.get("is_synthetic") is True for item in news)
+        or fundamentals.get("is_synthetic") is True
+    ):
+        synthetic = True
+    if not isinstance(is_synthetic, bool):
+        errors.append("Dataset provenance is unconfirmed; declare whether the input is synthetic.")
     dates = [_timestamp(_time_of(c)) for c in candles]
     if not candles:
         errors.append("No price observations supplied.")
@@ -89,6 +97,17 @@ def build_evidence(
             break
     as_of = str(_time_of(candles[-1])) if candles else storage.utc_now()
     observed = dates[-1] if dates else None
+    if candles and len(as_of) == 10:
+        cutoff = _timestamp(decision_time)
+        declared = datetime.fromisoformat(decision_time) if cutoff else None
+        if not declared or not declared.tzinfo or declared.date().isoformat() != as_of:
+            errors.append(
+                "Date-only bars require an explicit, timezone-aware decision time on the final bar date."
+            )
+            observed = None
+        else:
+            observed = cutoff
+            as_of = declared.isoformat()
     age_hours = (now - observed).total_seconds() / 3600 if observed else None
     if age_hours is not None and age_hours < -1:
         errors.append("Latest observation is in the future.")
@@ -188,6 +207,9 @@ def build_evidence(
                 )
     eligible_news = []
     for item in news[:20]:
+        if observed is None:
+            missing.append("News excluded because the decision timestamp is unconfirmed.")
+            continue
         published = _timestamp(
             item.get("published_at") or item.get("timestamp") or item.get("date")
         )
@@ -260,7 +282,7 @@ def build_evidence(
         "symbol": symbol,
         "as_of": as_of,
         "generated_at": now.isoformat(),
-        "horizon": "Daily research context; order-book snapshots, when supplied separately, are intraday liquidity context only.",
+        "horizon": "Daily research context. Level 2/3 and executed order flow are deferred.",
         "action": action,
         "supporting": supporting,
         "opposing": opposing,

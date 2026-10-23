@@ -206,10 +206,14 @@ def fetch_upstox_quote(instrument_key: str) -> dict:
     )
     if result.get("status") != "success" or not result.get("data"):
         raise ProviderError("Upstox did not return a quote for this instrument.")
-    quote = next(iter(result["data"].values()))
-    returned_key = quote.get("instrument_token")
-    if returned_key and returned_key != instrument_key:
-        raise ProviderError("Upstox returned a different instrument; snapshot rejected.")
+    data = result["data"]
+    if not isinstance(data, dict) or len(data) != 1:
+        raise ProviderError("Upstox must return exactly one identified instrument.")
+    quote = next(iter(data.values()))
+    if not isinstance(quote, dict) or quote.get("instrument_token") != instrument_key:
+        raise ProviderError(
+            "Upstox returned a missing or different instrument identity; snapshot rejected."
+        )
     return {
         "source": "Upstox periodic quote snapshot",
         "received_at": storage.utc_now(),

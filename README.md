@@ -36,13 +36,21 @@ ctest --test-dir engine/build --output-on-failure -C Release
 - Source-linked evidence cards: supporting/opposing observations, missing information, horizon and invalidation conditions.
 - C++ long-or-cash, whole-share backtests with next-observed-open execution, configurable hypothetical fees/slippage and three baselines.
 - C++ circular-block bootstrap and GBM wealth scenarios, seeded runs, loss/tail summaries and sensitivity settings.
-- Displayed depth spread/imbalance analysis for supplied snapshots. No inferred true CVD, footprint, cancellations or hidden liquidity.
+- Level 2/3 and order-flow research are deferred; the old depth snapshot lab is no longer shown.
 - Deterministic research reports/educational answers plus optional OpenRouter and Ollama providers.
 - A separate monitoring worker with persisted events/heartbeats and demo replay; optional authenticated read-only quote access is account-dependent.
 
 The full source tree is editable in Antigravity IDE. The research outline is [PROJECT_OUTLINE_AND_RESEARCH.md](PROJECT_OUTLINE_AND_RESEARCH.md); implementation details and limits here take precedence over planned features in that document.
 
 Start with [docs/FREE_DATA_SETUP.md](docs/FREE_DATA_SETUP.md) for the two optional provider credentials, free-data coverage and quotas. The complete installed function list is in [docs/INDICATOR_CATALOGUE.md](docs/INDICATOR_CATALOGUE.md). No API key is needed for indicator calculations or the stock identifier catalogue.
+
+## Dashboard workflow
+
+The **Workspace** selector and **Choose data** panel are at the top of every page,
+including on a narrow screen. Start with Overview, inspect Market analysis, then
+run Backtesting or Monte Carlo. Market analysis has its own calculation button;
+visiting Overview first is optional. AI model controls remain in the optional sidebar.
+All calculations on the demo work offline, without keys. Refresh the browser after an update.
 
 ## Use Antigravity IDE
 
@@ -71,6 +79,15 @@ timestamp,open,high,low,close,volume
 ```
 
 Use daily bars, oldest first, with no duplicate timestamps. Prices must be positive, volumes nonnegative and high/low must enclose open/close. The importer rejects invalid data rather than silently reordering or repairing it. Uploaded candles alone do not contain order-book or news data.
+
+Confirm **completed daily bars** before running experiments and flag fictional/test
+files explicitly. Intraday, weekly and very sparse spacing are rejected by the daily
+experiment boundary; this does not verify exchange-calendar completeness. For date-only
+bars, confirm the **decision time (India time)** against the source. The default 15:30
+is a declared research convention, not verification of a special session's close.
+News published after this cutoff is excluded. The programmatic evidence builder requires
+explicit provenance and a timezone-aware cutoff for date-only inputs; missing declarations
+produce insufficient evidence.
 
 Optionally attach a JSON file containing separately sourced `news`, `fundamentals` and/or `depth`. See [examples/evidence_template.json](examples/evidence_template.json) for the exact shape. Replace the fictional example with permitted evidence and its actual publication/source timestamps. The attachment is validated, never fetched from its URLs. Future-dated news/fundamentals are excluded from a historical evidence card; a depth snapshot remains separate from daily investment research. Any synthetic evidence must remain labelled synthetic.
 

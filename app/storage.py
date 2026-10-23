@@ -9,24 +9,36 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
+
+_INITIALIZE_LOCK = threading.Lock()
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@contextmanager
-def connection() -> Iterator[sqlite3.Connection]:
-    path = Path(os.getenv("STOCK_RESEARCH_DB", "runs/research.sqlite"))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, timeout=10)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA busy_timeout=10000")
-    db.execute("PRAGMA journal_mode=WAL")
+def _initialize(db: sqlite3.Connection) -> None:
+    # WAL activation can report BUSY immediately, even with busy_timeout set.
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            if db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+                db.execute("PRAGMA journal_mode=WAL")
+            break
+        except sqlite3.OperationalError as exc:
+            code = getattr(exc, "sqlite_errorcode", 0) & 255
+            if (
+                code not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+                or time.monotonic() >= deadline
+            ):
+                raise
+            time.sleep(0.05)
     db.executescript("""
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS evidence (
@@ -47,7 +59,18 @@ def connection() -> Iterator[sqlite3.Connection]:
             tokens INTEGER DEFAULT 0);
         CREATE INDEX IF NOT EXISTS usage_time ON usage(provider, created_at);
     """)
+
+
+@contextmanager
+def connection() -> Iterator[sqlite3.Connection]:
+    path = Path(os.getenv("STOCK_RESEARCH_DB", "runs/research.sqlite"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(path, timeout=10)
+    db.row_factory = sqlite3.Row
     try:
+        db.execute("PRAGMA busy_timeout=10000")
+        with _INITIALIZE_LOCK:
+            _initialize(db)
         yield db
         db.commit()
     except BaseException:

@@ -9,6 +9,7 @@ Every expensive engine or model operation requires an explicit user action.
 from __future__ import annotations
 
 import hashlib
+from datetime import time
 import json
 import os
 from pathlib import Path
@@ -28,13 +29,12 @@ from app import storage
 from app.attachments import load_evidence_json
 from app.chat import answer_question
 from app.demo import SYMBOLS, load_demo
-from app.engine_bridge import EngineClient, load_candles_csv
+from app.engine_bridge import EngineClient, load_candles_csv, validate_daily_candles
 from app.monitor import run_once
 from app.research_labs import indicator_lab, stock_catalogue
 from app.services import build_evidence, generate_report
 from app.ui_helpers import (
     candle_frame,
-    depth_chart,
     equity_charts,
     json_download,
     number,
@@ -61,7 +61,6 @@ RESULT_KEYS = (
     "report",
     "backtests",
     "simulation",
-    "depth_result",
     "chat_history",
     "experiment_settings",
     "indicator_result",
@@ -133,11 +132,13 @@ def model_controls() -> tuple[str, str | None]:
 
 
 def select_dataset() -> dict:
-    with st.sidebar.expander("Research dataset", expanded=True):
+    with st.expander("Choose data · demo or historical CSV", expanded=False):
         source = st.radio("Data source", ["Synthetic demo", "Upload historical CSV"])
         if source == "Synthetic demo":
             symbol = st.selectbox("Demonstration instrument", SYMBOLS)
             dataset = load_demo(symbol)
+            dataset["bar_interval"] = "1d"
+            dataset["decision_time"] = dataset["candles"][-1]["timestamp"] + "T15:30:00+05:30"
         else:
             symbol = st.text_input("Instrument label", value="MY_NSE_STOCK").strip().upper()
             uploaded = st.file_uploader("Historical OHLCV CSV", type=["csv"])
@@ -160,14 +161,25 @@ def select_dataset() -> dict:
                 "news": [],
                 "fundamentals": {},
                 "depth": {},
-                "is_synthetic": False,
+                "is_synthetic": st.checkbox("This file contains fictional / test prices"),
+                "bar_interval": "1d"
+                if st.checkbox("I confirm these are completed daily bars")
+                else "unconfirmed",
                 "description": f"User-supplied historical file: {uploaded.name}",
             }
+            if len(candles[-1]["timestamp"]) == 10:
+                close_time = st.time_input("Daily decision time (India time)", value=time(15, 30))
+                dataset["decision_time"] = (
+                    candles[-1]["timestamp"] + "T" + close_time.isoformat() + "+05:30"
+                )
+                st.caption(
+                    "Confirm the decision time against your source. Special sessions and market holidays are not verified automatically."
+                )
             attachment = st.file_uploader(
                 "Optional dated evidence JSON", type=["json"], key="evidence_attachment"
             )
             st.caption(
-                "Attach sourced news, published company figures or a separately dated depth snapshot. See README for the format."
+                "Attach sourced news or published company figures. See README for the format."
             )
             if attachment is not None:
                 try:
@@ -183,7 +195,8 @@ def select_dataset() -> dict:
                     "synthetic": dataset["is_synthetic"],
                     "news": dataset.get("news"),
                     "fundamentals": dataset.get("fundamentals"),
-                    "depth": dataset.get("depth"),
+                    "bar_interval": dataset.get("bar_interval"),
+                    "decision_time": dataset.get("decision_time"),
                 },
                 sort_keys=True,
                 default=str,
@@ -199,6 +212,10 @@ def select_dataset() -> dict:
 def overview(dataset: dict, provider: str, model: str | None) -> None:
     candles = dataset["candles"]
     last = candles[-1]
+    with st.expander("How to use this workspace"):
+        st.write(
+            "Choose data → explore Market analysis → compare Backtesting and Monte Carlo results. The demo works without keys."
+        )
     st.markdown("### Market snapshot")
     with st.container(horizontal=True, gap="small"):
         st.metric(
@@ -212,12 +229,6 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
         st.metric(
             "Latest volume",
             f"{volume / 1_000_000:.2f}M" if volume >= 1_000_000 else number(volume, 0),
-            border=True,
-            width="stretch",
-        )
-        st.metric(
-            "Data mode",
-            "Demo" if dataset["is_synthetic"] else "Imported",
             border=True,
             width="stretch",
         )
@@ -243,6 +254,8 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
                     news=dataset.get("news", []),
                     symbol=dataset["symbol"],
                     fundamentals=dataset.get("fundamentals", {}),
+                    is_synthetic=dataset["is_synthetic"],
+                    decision_time=dataset.get("decision_time"),
                 )
                 st.session_state.analysis = analysis
                 st.session_state.evidence = evidence
@@ -311,11 +324,15 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
 
 
 def price_liquidity(dataset: dict) -> None:
-    st.markdown("### Price structure, volume and visible liquidity")
+    st.markdown("### Price and volume")
     st.caption(
         "Prior ranges, gaps and relative volume lead the analysis. Moving averages and RSI are supporting context."
     )
     analysis = st.session_state.get("analysis")
+    if not analysis and st.button("Calculate price structure", type="primary"):
+        analysis = engine_request("analyze", dataset["candles"])
+        if analysis:
+            st.session_state.analysis = analysis
     overlay = st.multiselect(
         "Supporting overlays",
         ["sma20", "ema20"],
@@ -347,45 +364,25 @@ def price_liquidity(dataset: dict) -> None:
             )
     else:
         st.caption(
-            "Build the evidence card in Overview to add engine-calculated structure and indicators."
+            "Calculate price structure above to add prior ranges, volume context and overlays."
         )
     st.divider()
     indicator_lab(dataset)
-    st.divider()
-    st.markdown("### Order-book snapshot lab")
-    depth = dataset.get("depth", {})
-    if not depth.get("bids") or not depth.get("asks"):
-        st.info(
-            "This dataset has no order-book observations. OHLCV cannot recover depth, individual orders or true CVD."
-        )
-    else:
-        if dataset["is_synthetic"]:
-            st.warning(
-                "SYNTHETIC DEPTH SNAPSHOT · No live feed, executions, cancellations or queue positions are represented."
-            )
-        else:
-            st.info(
-                f"UPLOADED SNAPSHOT · {depth.get('as_of')} · Source: {depth.get('source')}. "
-                "User-provided depth is not independently verified and is separate from daily price history."
-            )
-        st.plotly_chart(depth_chart(depth["bids"], depth["asks"]), width="stretch")
-        if st.button("Inspect displayed-depth balance"):
-            result = engine_request("depth", depth["bids"], depth["asks"])
-            if result is not None:
-                st.session_state.depth_result = result
-        result = st.session_state.get("depth_result")
-        if result:
-            cols = st.columns(3)
-            cols[0].metric("Displayed spread", number(result.get("spread"), 4))
-            cols[1].metric("Spread (bps)", number(result.get("spread_bps")))
-            cols[2].metric("Visible-depth imbalance", number(result.get("depth_imbalance"), 3))
-            show_items(result.get("assumptions"))
-    st.caption(
-        "Displayed book imbalance is a short-horizon liquidity observation. It does not establish "
-        "executed buying/selling pressure or a long-term investment thesis."
-    )
+
     with st.expander("Inspect supplied OHLCV observations"):
         st.dataframe(candle_frame(dataset["candles"]), hide_index=True, width="stretch")
+
+
+def daily_experiment_ready(dataset: dict) -> bool:
+    try:
+        validate_daily_candles(dataset["candles"], dataset.get("bar_interval", "unconfirmed"))
+        return True
+    except ValueError as exc:
+        st.warning(str(exc))
+        st.caption(
+            "Open Choose data above to confirm the bar interval. Annualized results assume 252 daily observations per year."
+        )
+        return False
 
 
 def backtest_lab(dataset: dict) -> None:
@@ -398,10 +395,7 @@ def backtest_lab(dataset: dict) -> None:
         if dataset["is_synthetic"]
         else "Historical results depend on source quality, corporate actions, universe selection and execution assumptions."
     )
-    if len({row["timestamp"][:10] for row in dataset["candles"]}) != len(dataset["candles"]):
-        st.warning(
-            "This lab currently assumes daily bars for annualized statistics. Import one completed bar per trading date."
-        )
+    if not daily_experiment_ready(dataset):
         return
     with st.form("backtest_form"):
         a, b, c = st.columns(3)
@@ -498,10 +492,7 @@ def monte_carlo_lab(dataset: dict) -> None:
     st.info(
         "Conditional scenarios, not price forecasts. Change assumptions to explore the sensitivity of possible outcomes."
     )
-    if len({row["timestamp"][:10] for row in dataset["candles"]}) != len(dataset["candles"]):
-        st.warning(
-            "Daily calibration requires one completed bar per trading date. Intraday scenario calibration is a later extension."
-        )
+    if not daily_experiment_ready(dataset):
         return
     with st.form("simulation_form"):
         a, b, c = st.columns(3)
@@ -888,7 +879,7 @@ def settings(provider: str, model: str | None) -> None:
 
 PAGES = {
     "Overview": "A clear view of your research, evidence and next decisions.",
-    "Market analysis": "Price structure, indicators and visible liquidity.",
+    "Market analysis": "Inspect price structure and volume, then add supporting indicators.",
     "Backtesting": "Compare strategies under the same execution assumptions.",
     "Monte Carlo": "Explore a range of conditional outcomes.",
     "Assistant": "Discuss the evidence and understand your results.",
@@ -900,12 +891,15 @@ PAGES = {
 
 def main() -> None:
     st.sidebar.title("Equity")
-    st.sidebar.caption("RESEARCH WORKSPACE")
-    page = st.sidebar.radio(
-        "Workspace", list(PAGES), key="workspace_page", label_visibility="collapsed"
-    )
-    st.sidebar.divider()
-    dataset = select_dataset()
+    st.sidebar.caption("OPTIONAL MODEL SETTINGS")
+    st.caption("EQUITY / INDIA CASH EQUITIES")
+    navigation, data_controls = st.columns([1, 1.5])
+    with navigation:
+        page = st.selectbox(
+            "Workspace", list(PAGES), key="workspace_page", label_visibility="collapsed"
+        )
+    with data_controls:
+        dataset = select_dataset()
     provider, model = model_controls()
     st.sidebar.caption("India · Cash equities")
     st.sidebar.caption(
@@ -913,32 +907,28 @@ def main() -> None:
         if not os.getenv("UPSTOX_ACCESS_TOKEN")
         else "Local workspace · Verify data freshness"
     )
-    st.caption("EQUITY RESEARCH  /  " + page.upper())
+    research_page = page not in {"Monitoring", "Stock universe", "Settings"}
     with st.container(
         horizontal=True, vertical_alignment="center", horizontal_alignment="distribute"
     ):
         st.title(page, width="content")
-        st.badge(
-            "Demo dataset" if dataset["is_synthetic"] else "Historical import",
-            color="orange" if dataset["is_synthetic"] else "blue",
-        )
-    st.caption(PAGES[page])
-    with st.container(border=True):
-        st.markdown(
-            "**"
-            + dataset["symbol"].replace("DEMO_", "").replace("_", " ").title()
-            + "**  ·  "
+        if research_page:
+            st.badge(
+                "Demo · fictional" if dataset["is_synthetic"] else "Historical CSV",
+                color="orange" if dataset["is_synthetic"] else "blue",
+            )
+    if research_page:
+        st.caption(
+            dataset["symbol"].replace("DEMO_", "").replace("_", " ").title()
+            + " · "
             + (
-                "Fictional research instrument"
+                "Fictional data · Not live"
                 if dataset["is_synthetic"]
-                else "Imported research instrument"
+                else "Historical CSV · Source quality unverified"
             )
         )
-        st.caption(
-            "Synthetic prices, news and depth · No live market connection"
-            if dataset["is_synthetic"]
-            else "User-supplied history · Freshness and adjustments unverified"
-        )
+    else:
+        st.caption(PAGES[page])
     if page == "Overview":
         overview(dataset, provider, model)
     elif page == "Market analysis":

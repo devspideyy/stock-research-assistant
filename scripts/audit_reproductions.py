@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.engine_bridge import EngineClient
+from app.engine_bridge import CandleValidationError, EngineClient
 from app.demo import load_demo, SYMBOLS
 from app import providers, storage
 from app.monitor import run_once
@@ -25,6 +25,7 @@ def main():
         [{"price": 101, "quantity": 10}],
     )
     output["empty_depth_level"] = {
+        "status": "Deferred: depth is no longer exposed in the dashboard",
         "actual_spread": book["spread"],
         "spread_using_positive_quantity_levels": 2,
     }
@@ -36,14 +37,21 @@ def main():
             return_value={"status": "success", "data": {"unverified": {"last_price": 123}}},
         ),
     ):
-        output["missing_quote_identity"] = {
-            "accepted": providers.fetch_upstox_quote("NSE_EQ|INE123A01010")["quote"]
-            == {"last_price": 123}
-        }
+        try:
+            providers.fetch_upstox_quote("NSE_EQ|INE123A01010")
+            output["missing_quote_identity"] = {"accepted": True}
+        except providers.ProviderError as exc:
+            output["missing_quote_identity"] = {"accepted": False, "reason": str(exc)}
     data = load_demo(SYMBOLS[0])
     candles = data["candles"]
     evidence = build_evidence(
-        candles, engine.analyze(candles), news=[], fundamentals={}, symbol=SYMBOLS[0]
+        candles,
+        engine.analyze(candles),
+        news=[],
+        fundamentals={},
+        symbol=SYMBOLS[0],
+        is_synthetic=True,
+        decision_time=candles[-1]["timestamp"] + "T15:30:00+05:30",
     )
     output["synthetic_label_without_auxiliary_text"] = {
         "actual_flag": evidence["data_quality"]["synthetic"],
@@ -56,7 +64,12 @@ def main():
         "source": "Audit fixture",
     }
     cutoff_card = build_evidence(
-        cutoff_candles, engine.analyze(cutoff_candles), news=[same_day], symbol="AUDIT"
+        cutoff_candles,
+        engine.analyze(cutoff_candles),
+        news=[same_day],
+        symbol="AUDIT",
+        is_synthetic=True,
+        decision_time=cutoff_candles[-1]["timestamp"] + "T15:30:00+05:30",
     )
     output["date_only_news_cutoff"] = {
         "bar_date": cutoff_candles[-1]["timestamp"],
@@ -68,13 +81,11 @@ def main():
         dict(row, timestamp=(datetime(2025, 1, 3) + timedelta(weeks=i)).date().isoformat())
         for i, row in enumerate(candles[:30])
     ]
-    output["weekly_bars"] = {
-        "pass_dashboard_duplicate_date_guard": len({row["timestamp"][:10] for row in weekly})
-        == len(weekly),
-        "native_daily_annualization": engine.backtest(weekly, strategy="buy_hold")["limitations"][
-            "daily_bar_annualization"
-        ],
-    }
+    try:
+        engine.backtest(weekly, strategy="buy_hold")
+        output["weekly_bars"] = {"rejected": False}
+    except CandleValidationError as exc:
+        output["weekly_bars"] = {"rejected": True, "reason": str(exc)}
     with (
         tempfile.TemporaryDirectory() as directory,
         patch.dict(

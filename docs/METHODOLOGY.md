@@ -14,6 +14,14 @@ Does dated event, price/volume and accessible liquidity evidence improve useful 
 
 Every research report records the analysis cutoff, horizon, supporting and opposing facts, missing information, invalidation conditions and source references. Separate observed, estimated and generated claims. “Insufficient evidence” is an acceptable result. A language model's asserted confidence is not a calibrated probability.
 
+Dataset provenance is explicit; missing provenance blocks the research gate. Date-only
+inputs also need a timezone-aware decision time before dated evidence can be used.
+The UI defaults to an editable 15:30 India-time cutoff. Confirm it against the source,
+especially for special sessions; this is not automatic exchange-calendar validation.
+Daily experiments require an interval declaration and plausible date spacing, while
+calendar completeness and corporate-action correctness still require source review.
+Level 2/3 research is deferred and its previous snapshot lab is hidden.
+
 Indicators describe context. The numerical research baseline uses prior rolling price levels and relative volume rather than making RSI/MACD the recommendation engine. The current bar is excluded from its reference level/volume denominator. A retrospectively confirmed pivot cannot be treated as known earlier.
 
 Displayed book imbalance compares resting bid/ask quantities. It does not identify completed buying, cancellation intent, hidden liquidity or spoofing. Only enable executed-trade features if the provider actually supplies suitable trade events; otherwise label the capability unavailable.

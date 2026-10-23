@@ -9,6 +9,7 @@ import json
 import math
 import os
 import subprocess
+from statistics import median
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,20 @@ def load_candles_csv(source: bytes | str | Any) -> list[dict]:
     return validate_candles(rows)
 
 
+def validate_daily_candles(candles: list[dict], bar_interval: str = "1d") -> list[dict]:
+    """Enforce the daily-only experiment contract; not an exchange-calendar check."""
+    rows = validate_candles(candles)
+    if bar_interval != "1d":
+        raise CandleValidationError("Confirm completed daily bars before running experiments.")
+    dates = [datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).date() for row in rows]
+    gaps = [(b - a).days for a, b in zip(dates, dates[1:])]
+    if min(gaps) < 1 or median(gaps) >= 5:
+        raise CandleValidationError(
+            "Experiments require daily bars; intraday, weekly or very sparse history was detected."
+        )
+    return rows
+
+
 def find_engine() -> Path:
     override = os.getenv("STOCK_RESEARCH_ENGINE")
     if override:
@@ -165,11 +180,15 @@ class EngineClient:
     def analyze(self, candles: list[dict], **options: Any) -> dict:
         return self._call("analyze", candles=validate_candles(candles), options=options)
 
-    def backtest(self, candles: list[dict], **options: Any) -> dict:
-        return self._call("backtest", candles=validate_candles(candles), options=options)
+    def backtest(self, candles: list[dict], *, bar_interval: str = "1d", **options: Any) -> dict:
+        return self._call(
+            "backtest", candles=validate_daily_candles(candles, bar_interval), options=options
+        )
 
-    def simulate(self, candles: list[dict], **options: Any) -> dict:
-        return self._call("simulate", candles=validate_candles(candles), options=options)
+    def simulate(self, candles: list[dict], *, bar_interval: str = "1d", **options: Any) -> dict:
+        return self._call(
+            "simulate", candles=validate_daily_candles(candles, bar_interval), options=options
+        )
 
     def depth(self, bids: list[dict], asks: list[dict]) -> dict:
         return self._call("depth", bids=bids, asks=asks)

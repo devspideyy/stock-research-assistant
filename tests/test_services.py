@@ -34,7 +34,7 @@ def make_candles(count=30):
 
 def test_evidence_rejects_bad_and_stale_inputs():
     candles = make_candles()
-    fresh = services.build_evidence(candles, {}, symbol="TEST")
+    fresh = services.build_evidence(candles, {}, symbol="TEST", is_synthetic=False)
     assert fresh["data_quality"]["valid"] is True
     assert fresh["action"] == "RESEARCH_WATCH"
     candles[-1]["close"] = 0
@@ -66,7 +66,7 @@ def test_excludes_future_news_and_undated_fundamentals():
 
 
 def test_synthetic_evidence_never_looks_like_actual_signal():
-    card = services.build_evidence(make_candles(), {"source": "SYNTHETIC fixture"})
+    card = services.build_evidence(make_candles(), {}, is_synthetic=True)
     assert card["data_quality"]["synthetic"]
     assert card["action"] == "INSUFFICIENT_EVIDENCE"
 

@@ -1,6 +1,8 @@
 # Research review — 24 October 2026
 
-- [Implementation audit](AUDIT_REPORT.md): seven open findings, reproduction evidence,
+- [Implementation follow-up](IMPLEMENTATION_FOLLOWUP.md): six audit items addressed,
+  depth deferred, simpler dashboard and 246 passing tests. **Read this for current status.**
+- [Implementation audit](AUDIT_REPORT.md): seven original findings, reproduction evidence,
   code locations, corrections to earlier descriptions and existing limitations.
 - [Future research programme](FUTURE_RESEARCH.md): twelve study/engineering areas,
   primary sources, experiments, completion gates and planning estimates.
@@ -8,7 +10,7 @@
 - SQLite cold-start output: [trial 1](sqlite-trial-1.txt),
   [trial 2](sqlite-trial-2.txt), [trial 3](sqlite-trial-3.txt).
 
-## Progress note for academic review
+## Original audit note (before the fixes)
 
 The C++ and Python prototype was reviewed for correctness, information timing,
 provenance and research validity. The core next-open backtest and modular numerical
@@ -28,5 +30,5 @@ workflows using point-in-time evidence. Prospective logging should start once da
 access is available. No investment-performance claim is established. The proposed
 8–12 week part-time programme is an estimate; access and observation time affect it.
 
-Application behaviour was left unchanged. These files contain reports and audit
-fixtures, not completed fixes. Findings remain open.
+Application behaviour was left unchanged during that original audit. The subsequent
+[implementation follow-up](IMPLEMENTATION_FOLLOWUP.md) records the fixes and remaining limits.

@@ -52,7 +52,13 @@ def _demo_observation(symbol: str) -> tuple[dict, str]:
     # The source is explicit even when no demo headline is available.
     analysis["source"] = "SYNTHETIC deterministic demo/replay"
     evidence = build_evidence(
-        candles, analysis, dataset.get("news"), symbol, dataset.get("fundamentals")
+        candles,
+        analysis,
+        dataset.get("news"),
+        symbol,
+        dataset.get("fundamentals"),
+        is_synthetic=True,
+        decision_time=candles[-1]["timestamp"] + "T15:30:00+05:30",
     )
     storage.save_evidence(evidence)
     source_time = evidence["as_of"]
@@ -113,13 +119,14 @@ def run_once(mode: str = "demo", symbols: list[str] | None = None) -> dict:
                 price = quote.get("last_price")
                 if price is None or float(price) <= 0:
                     raise providers.ProviderError("Live snapshot has no valid last price.")
-                checkpoint_key = f"checkpoint:live:{symbol}"
+                checkpoint_key = f"checkpoint:live:{instrument}"
                 previous = storage.get_setting(checkpoint_key, {})
                 baseline = previous.get("alert_price")
                 change = float(price) / float(baseline) - 1 if baseline else None
                 significant = baseline is not None and abs(change) >= 0.005
                 observation = {
                     "symbol": symbol,
+                    "instrument_key": instrument,
                     "as_of": source_time,
                     "received_at": snapshot["received_at"],
                     "source": snapshot["source"],
@@ -138,11 +145,11 @@ def run_once(mode: str = "demo", symbols: list[str] | None = None) -> dict:
                 if not fresh:
                     kind = "stale_snapshot"
                     inserted = storage.record_event(
-                        _event_key(mode, symbol, source_time, kind), symbol, kind, observation
+                        _event_key(mode, instrument, source_time, kind), symbol, kind, observation
                     )
                 elif baseline is None or significant:
                     inserted = storage.record_event(
-                        _event_key(mode, symbol, source_time, kind, price),
+                        _event_key(mode, instrument, source_time, kind, price),
                         symbol,
                         kind,
                         observation,

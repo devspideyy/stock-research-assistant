@@ -14,7 +14,7 @@ def button(app, label):
 
 
 def navigate(app, page):
-    next(item for item in app.sidebar.radio if item.label == "Workspace").set_value(page).run()
+    next(item for item in app.selectbox if item.label == "Workspace").set_value(page).run()
     assert not app.exception
 
 
@@ -38,9 +38,7 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     assert not app.exception
     assert app.session_state["simulation"]["summary"]["p05"] > 0
     navigate(app, "Market analysis")
-    button(app, "Inspect displayed-depth balance").click().run()
-    assert not app.exception
-    assert app.session_state["depth_result"]["spread"] > 0
+    assert not any("depth balance" in item.label for item in app.button)
     navigate(app, "Assistant")
     app.chat_input[0].set_value("What is drawdown, and why is CVD unavailable?").run()
     assert not app.exception
@@ -51,9 +49,7 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     navigate(app, "Monitoring")
     navigate(app, "Settings")
     navigate(app, "Overview")
-    selector = next(
-        item for item in app.sidebar.selectbox if item.label == "Demonstration instrument"
-    )
+    selector = next(item for item in app.selectbox if item.label == "Demonstration instrument")
     selector.set_value(SYMBOLS[1]).run()
     assert not app.exception
     assert "backtests" not in app.session_state
@@ -84,6 +80,8 @@ def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
     app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
     assert not app.exception
     navigate(app, "Market analysis")
+    button(app, "Calculate price structure").click().run()
+    assert app.session_state["analysis"]["summary"]
     button(app, "Calculate selected indicator").click().run()
     assert not app.exception
     assert app.session_state["indicator_result"]["function"] == "RSI"
@@ -104,8 +102,6 @@ def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
     assert not app.exception
     selector = next(item for item in app.selectbox if item.label == "Stock identifier")
     assert selector.value["instrument_key"] == "NSE_EQ|INE123A01010"
-    selector = next(
-        item for item in app.sidebar.selectbox if item.label == "Demonstration instrument"
-    )
+    selector = next(item for item in app.selectbox if item.label == "Demonstration instrument")
     selector.set_value(SYMBOLS[1]).run()
     assert "indicator_result" not in app.session_state

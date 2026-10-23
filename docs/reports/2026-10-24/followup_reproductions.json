@@ -1,0 +1,30 @@
+{
+  "empty_depth_level": {
+    "status": "Deferred: depth is no longer exposed in the dashboard",
+    "actual_spread": 1.0,
+    "spread_using_positive_quantity_levels": 2
+  },
+  "missing_quote_identity": {
+    "accepted": false,
+    "reason": "Upstox returned a missing or different instrument identity; snapshot rejected."
+  },
+  "synthetic_label_without_auxiliary_text": {
+    "actual_flag": true,
+    "expected_flag": true
+  },
+  "date_only_news_cutoff": {
+    "bar_date": "2026-01-23",
+    "publication": "2026-01-23T10:00:00+05:30",
+    "included_as_news_fact": true,
+    "policy_needed": "Explicit exchange session close for a completed daily bar; date alone is not a decision timestamp"
+  },
+  "weekly_bars": {
+    "rejected": true,
+    "reason": "Experiments require daily bars; intraday, weekly or very sparse history was detected."
+  },
+  "remapped_symbol_baseline": {
+    "change_since_alert": null,
+    "event_kind": "live_snapshot_baseline",
+    "expected": "new instrument baseline; no cross-instrument return"
+  }
+}
