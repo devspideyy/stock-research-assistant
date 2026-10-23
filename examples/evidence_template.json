@@ -1,0 +1,26 @@
+{
+  "news": [
+    {
+      "title": "Synthetic example: fictional demand update",
+      "summary": "Template only. Replace with text you are permitted to use and retain actual publication times.",
+      "published_at": "2026-01-23T10:00:00+05:30",
+      "source": "Synthetic example",
+      "url": "",
+      "is_synthetic": true
+    }
+  ],
+  "fundamentals": {
+    "published_at": "2026-01-22T16:00:00+05:30",
+    "source": "Synthetic example",
+    "revenue_growth_pct": 12.0,
+    "debt_to_equity": 0.4,
+    "note": "Fictional values; specify units and publication dates for real figures."
+  },
+  "depth": {
+    "as_of": "2026-01-23T10:00:00+05:30",
+    "source": "Synthetic example snapshot",
+    "is_synthetic": true,
+    "bids": [{"price": 99.95, "quantity": 150}, {"price": 99.9, "quantity": 200}],
+    "asks": [{"price": 100.05, "quantity": 100}, {"price": 100.1, "quantity": 300}]
+  }
+}

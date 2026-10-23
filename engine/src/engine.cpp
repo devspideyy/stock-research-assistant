@@ -1,0 +1,431 @@
+#include "engine.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cctype>
+#include <cstdint>
+#include <limits>
+#include <numeric>
+#include <random>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace finance {
+namespace {
+constexpr double trading_days = 252.0;
+
+struct Candle {
+    std::string timestamp;
+    double open, high, low, close, volume;
+};
+
+void require(bool condition, const std::string& message) {
+    if (!condition) throw std::invalid_argument(message);
+}
+
+double number(const json& value, const std::string& name) {
+    require(value.is_number() && !value.is_boolean(), name + " must be numeric");
+    const double result = value.get<double>();
+    require(std::isfinite(result), name + " must be finite");
+    return result;
+}
+
+double option(const json& options, const std::string& key, double fallback,
+              double low, double high) {
+    const double value = options.contains(key) ? number(options.at(key), key) : fallback;
+    require(value >= low && value <= high, key + " is outside the permitted range");
+    return value;
+}
+
+int integer_option(const json& options, const std::string& key, int fallback,
+                   int low, int high) {
+    const double value = option(options, key, fallback, low, high);
+    require(std::floor(value) == value, key + " must be an integer");
+    return static_cast<int>(value);
+}
+
+bool valid_timestamp(const std::string& text) {
+    // Uniform ISO dates or second-precision UTC/naive timestamps sort chronologically.
+    if (text.size() != 10 && text.size() != 19 && text.size() != 20) return false;
+    if (text[4] != '-' || text[7] != '-') return false;
+    for (std::size_t i = 0; i < 10; ++i) {
+        if (i != 4 && i != 7 && !std::isdigit(static_cast<unsigned char>(text[i]))) return false;
+    }
+    const int year = std::stoi(text.substr(0, 4));
+    const int month = std::stoi(text.substr(5, 2));
+    const int day = std::stoi(text.substr(8, 2));
+    if (year < 1900 || month < 1 || month > 12 || day < 1) return false;
+    int month_days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) month_days[1] = 29;
+    if (day > month_days[month - 1]) return false;
+    if (text.size() > 10) {
+        if (text[10] != 'T' || text[13] != ':' || text[16] != ':') return false;
+        for (std::size_t i = 11; i < 19; ++i) {
+            if (i != 13 && i != 16 && !std::isdigit(static_cast<unsigned char>(text[i]))) return false;
+        }
+        if (text.size() == 20 && text[19] != 'Z') return false;
+        if (std::stoi(text.substr(11, 2)) > 23 || std::stoi(text.substr(14, 2)) > 59 ||
+            std::stoi(text.substr(17, 2)) > 59) return false;
+    }
+    return true;
+}
+
+std::vector<Candle> candles_from(const json& request) {
+    require(request.contains("candles") && request.at("candles").is_array(), "candles must be an array");
+    const auto& rows = request.at("candles");
+    require(rows.size() >= 2 && rows.size() <= 100000, "Provide between 2 and 100000 candles");
+    std::vector<Candle> candles;
+    candles.reserve(rows.size());
+    for (const auto& row : rows) {
+        require(row.is_object(), "Each candle must be an object");
+        require(row.contains("timestamp") && row.at("timestamp").is_string(), "Candle timestamp is required");
+        const auto timestamp = row.at("timestamp").get<std::string>();
+        require(valid_timestamp(timestamp), "Timestamp must be YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS[Z]");
+        if (!candles.empty()) {
+            require(timestamp.size() == candles.front().timestamp.size(), "Timestamp formats must be uniform");
+            require(timestamp > candles.back().timestamp, "Candles must be strictly chronological, without duplicates");
+        }
+        for (const std::string key : {"open", "high", "low", "close", "volume"}) {
+            require(row.contains(key), "Candle missing " + key);
+        }
+        Candle c{timestamp, number(row.at("open"), "open"), number(row.at("high"), "high"),
+                 number(row.at("low"), "low"), number(row.at("close"), "close"), number(row.at("volume"), "volume")};
+        require(c.open > 0 && c.high > 0 && c.low > 0 && c.close > 0, "Prices must be positive");
+        require(c.high >= std::max(c.open, c.close) && c.low <= std::min(c.open, c.close), "Invalid OHLC price bounds");
+        require(c.volume >= 0, "Volume must be nonnegative");
+        require(c.high <= 1e12 && c.volume <= 1e15 && c.low >= 1e-9, "Candle values exceed supported numerical range");
+        candles.push_back(c);
+    }
+    return candles;
+}
+
+struct Features {
+    std::vector<double> sma, ema, rsi, atr, relative_volume, prior_high, prior_low;
+};
+
+Features calculate(const std::vector<Candle>& candles, int lookback = 20) {
+    const auto n = candles.size();
+    const double missing = std::numeric_limits<double>::quiet_NaN();
+    Features f{std::vector<double>(n, missing), std::vector<double>(n, missing),
+               std::vector<double>(n, missing), std::vector<double>(n, missing),
+               std::vector<double>(n, missing), std::vector<double>(n, missing),
+               std::vector<double>(n, missing)};
+    double close_sum = 0, ema = candles.front().close, gains = 0, losses = 0, atr = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        close_sum += candles[i].close;
+        if (i >= 20) close_sum -= candles[i - 20].close;
+        if (i >= 19) f.sma[i] = close_sum / 20.0;
+        if (i > 0) ema += (2.0 / 21.0) * (candles[i].close - ema);
+        if (i >= 19) f.ema[i] = ema;
+
+        if (i > 0) {
+            const double change = candles[i].close - candles[i - 1].close;
+            const double gain = std::max(change, 0.0), loss = std::max(-change, 0.0);
+            if (i <= 14) { gains += gain; losses += loss; }
+            if (i == 14) { gains /= 14.0; losses /= 14.0; }
+            if (i > 14) { gains = (gains * 13 + gain) / 14; losses = (losses * 13 + loss) / 14; }
+            if (i >= 14) {
+                f.rsi[i] = losses == 0 ? (gains == 0 ? 50.0 : 100.0) : 100.0 - 100.0 / (1 + gains / losses);
+            }
+        }
+        const double true_range = i == 0 ? candles[i].high - candles[i].low :
+            std::max({candles[i].high - candles[i].low, std::abs(candles[i].high - candles[i - 1].close),
+                      std::abs(candles[i].low - candles[i - 1].close)});
+        if (i < 14) atr += true_range;
+        if (i == 13) atr /= 14.0;
+        if (i > 13) atr = (atr * 13 + true_range) / 14;
+        if (i >= 13) f.atr[i] = atr;
+
+        if (i > 0) {
+            const auto start = i > static_cast<std::size_t>(lookback) ? i - lookback : 0;
+            double volume = 0;
+            f.prior_high[i] = candles[start].high;
+            f.prior_low[i] = candles[start].low;
+            for (std::size_t j = start; j < i; ++j) {
+                volume += candles[j].volume;
+                f.prior_high[i] = std::max(f.prior_high[i], candles[j].high);
+                f.prior_low[i] = std::min(f.prior_low[i], candles[j].low);
+            }
+            const double average = volume / static_cast<double>(i - start);
+            if (average > 0) f.relative_volume[i] = candles[i].volume / average;
+        }
+    }
+    return f;
+}
+
+json nullable(double value) { return std::isfinite(value) ? json(value) : json(nullptr); }
+
+json analyze(const std::vector<Candle>& candles) {
+    const auto f = calculate(candles);
+    const auto i = candles.size() - 1;
+    const std::string breakout = candles[i].close > f.prior_high[i] ? "up" :
+                                 candles[i].close < f.prior_low[i] ? "down" : "none";
+    json rows = json::array();
+    for (std::size_t k = 0; k < candles.size(); ++k) {
+        const auto& c = candles[k];
+        rows.push_back({{"timestamp", c.timestamp}, {"open", c.open}, {"high", c.high}, {"low", c.low},
+                        {"close", c.close}, {"volume", c.volume}, {"sma20", nullable(f.sma[k])},
+                        {"ema20", nullable(f.ema[k])}, {"rsi14", nullable(f.rsi[k])}, {"atr14", nullable(f.atr[k])},
+                        {"relative_volume", nullable(f.relative_volume[k])},
+                        {"prior_high", nullable(f.prior_high[k])}, {"prior_low", nullable(f.prior_low[k])}});
+    }
+    return {{"summary", {{"last_close", candles[i].close}, {"return_1d", candles[i].close / candles[i - 1].close - 1},
+                         {"relative_volume", nullable(f.relative_volume[i])}, {"prior_high", f.prior_high[i]},
+                         {"prior_low", f.prior_low[i]}, {"breakout", breakout}, {"sma20", nullable(f.sma[i])},
+                         {"ema20", nullable(f.ema[i])}, {"rsi14", nullable(f.rsi[i])}, {"atr14", nullable(f.atr[i])}}},
+            {"series", rows}, {"assumptions", {"Indicators are supporting context, not investment forecasts.",
+            "Prior levels and relative volume exclude the current candle; up to 20 prior candles are used.",
+            "RSI and ATR use Wilder smoothing; EMA seeds from the first close, with 20-bar display warmup."}}};
+}
+
+json backtest(const std::vector<Candle>& candles, const json& options) {
+    const std::string strategy = options.value("strategy", std::string("price_volume"));
+    require(strategy == "price_volume" || strategy == "buy_hold" || strategy == "indicator", "Unknown backtest strategy");
+    const int lookback = integer_option(options, "lookback", 20, 2, 1000);
+    const double initial = option(options, "initial_capital", 100000, 1, 1e12);
+    const double max_exposure = option(options, "max_exposure", 1, 0, 1);
+    const double commission = option(options, "commission_bps", 10, 0, 1000) / 10000;
+    const double slippage = option(options, "slippage_bps", 5, 0, 1000) / 10000;
+    const double stop_loss = option(options, "stop_loss_pct", .08, 0, .99);
+    const double volume_threshold = option(options, "volume_threshold", 1.2, 0, 100);
+    const auto features = calculate(candles, lookback);
+    double cash = initial, position = 0, entry_price = 0, peak = initial, previous_equity = initial;
+    double max_drawdown = 0, traded_notional = 0, sum_exposure = 0;
+    int pending = 0;
+    std::vector<double> returns;
+    json equity_curve = json::array(), trades = json::array();
+
+    for (std::size_t i = 0; i < candles.size(); ++i) {
+        const auto& c = candles[i];
+        // Pending signals were created at the previous close. Current OHLC/volume
+        // cannot influence an execution at this candle's open.
+        if (i > 0 && pending == -1 && position > 0) {
+            const double fill = c.open * (1 - slippage);
+            const double notional = position * fill, fee = notional * commission;
+            cash += notional - fee;
+            trades.push_back({{"timestamp", c.timestamp}, {"side", "SELL"}, {"quantity", position}, {"price", fill}, {"fee", fee}});
+            traded_notional += notional;
+            position = 0;
+        } else if (i > 0 && pending == 1 && position == 0) {
+            const double fill = c.open * (1 + slippage);
+            const double budget = std::min(cash, (cash + position * c.open) * max_exposure);
+            const double quantity = std::floor(budget / (fill * (1 + commission)));
+            if (quantity > 0) {
+                const double notional = quantity * fill, fee = notional * commission;
+                cash -= notional + fee;
+                if (cash < 0 && cash > -1e-7) cash = 0;
+                require(cash >= 0, "Internal accounting error: negative cash");
+                position = quantity;
+                entry_price = fill;
+                traded_notional += notional;
+                trades.push_back({{"timestamp", c.timestamp}, {"side", "BUY"}, {"quantity", position}, {"price", fill}, {"fee", fee}});
+            }
+        }
+
+        const double equity = cash + position * c.close;
+        require(std::isfinite(equity) && equity > 0, "Portfolio value exceeds supported numerical range");
+        peak = std::max(peak, equity);
+        const double drawdown = 1 - equity / peak;
+        max_drawdown = std::max(max_drawdown, drawdown);
+        if (i > 0) {
+            returns.push_back(equity / previous_equity - 1);
+            sum_exposure += position > 0 ? 1.0 : 0.0;
+        }
+        previous_equity = equity;
+        equity_curve.push_back({{"timestamp", c.timestamp}, {"equity", equity}, {"drawdown", drawdown},
+                                {"cash", cash}, {"position", position}, {"close", c.close}});
+        pending = 0;
+        if (strategy == "buy_hold") {
+            if (position == 0) pending = 1;
+            continue;
+        }
+        if (position > 0) {
+            const bool stopped = stop_loss > 0 && c.close <= entry_price * (1 - stop_loss);
+            const bool strategy_exit = strategy == "price_volume" ? c.close < features.prior_low[i] :
+                (std::isfinite(features.sma[i]) && c.close < features.sma[i]);
+            if (stopped || strategy_exit) pending = -1;
+        } else if (strategy == "price_volume") {
+            if (i >= static_cast<std::size_t>(lookback) && c.close > features.prior_high[i] &&
+                std::isfinite(features.relative_volume[i]) && features.relative_volume[i] >= volume_threshold) pending = 1;
+        } else if (std::isfinite(features.sma[i]) && c.close > features.sma[i]) {
+            pending = 1;
+        }
+    }
+    const double mean = std::accumulate(returns.begin(), returns.end(), 0.0) / static_cast<double>(returns.size());
+    double squared = 0;
+    for (double value : returns) squared += (value - mean) * (value - mean);
+    const double volatility = returns.size() > 1 ? std::sqrt(squared / (returns.size() - 1)) : 0;
+    const json sharpe = volatility > 1e-15 ? json(mean / volatility * std::sqrt(trading_days)) : json(nullptr);
+    return {{"strategy", strategy}, {"metrics", {{"total_return", previous_equity / initial - 1},
+            {"max_drawdown", max_drawdown}, {"annualized_volatility", volatility * std::sqrt(trading_days)},
+            {"sharpe", sharpe}, {"trade_count", trades.size()}, {"turnover", traded_notional / initial},
+            {"exposure", sum_exposure / static_cast<double>(candles.size() - 1)}}},
+            {"equity", equity_curve}, {"trades", trades}, {"assumptions", {
+            "Long-only cash account; whole shares; no leverage. Signals at close execute at next observed open.",
+            "max_exposure caps allocation including entry costs when buying; later price movements may change portfolio exposure.",
+            "Slippage and commission apply to buys and sells. Other taxes, exchange fees and market impact must be modelled separately.",
+            "Stops are close-based signals executed next open; gaps can exceed the configured stop loss.",
+            "Final holdings are marked to final close, with no artificial liquidation; trade_count counts fills.",
+            "Sharpe uses zero risk-free rate; annualized volatility and Sharpe assume DAILY bars and 252 sessions/year.",
+            "Corporate actions are not processed. Raw split/dividend events invalidate this accounting. Adjusted OHLC models synthetic adjusted units, not actual historical lots or cash distributions.",
+            "Single-stock strategy test: no claims of portfolio diversification or survivorship-bias control."}}};
+}
+
+double quantile(std::vector<double> values, double probability) {
+    std::sort(values.begin(), values.end());
+    const double at = probability * static_cast<double>(values.size() - 1);
+    const auto lo = static_cast<std::size_t>(std::floor(at)), hi = static_cast<std::size_t>(std::ceil(at));
+    return values[lo] + (values[hi] - values[lo]) * (at - lo);
+}
+
+json simulate(const std::vector<Candle>& candles, const json& options) {
+    const std::string method = options.value("method", std::string("bootstrap"));
+    require(method == "bootstrap" || method == "gbm", "Simulation method must be bootstrap or gbm");
+    const int paths = integer_option(options, "paths", 1000, 10, 20000);
+    const int horizon = integer_option(options, "horizon", 60, 1, 2520);
+    require(static_cast<std::int64_t>(paths) * (horizon + 1) <= 5000000, "Simulation exceeds five million path steps");
+    const int seed = integer_option(options, "seed", 42, 0, 2147483647);
+    const int block_size = integer_option(options, "block_size", 5, 1, 2520);
+    const double capital = option(options, "capital", 100000, 1, 1e12);
+    const double volatility_multiplier = option(options, "volatility_multiplier", 1, 0, 5);
+    const double annual_drift_shift = option(options, "annual_drift_shift", 0, -2, 2);
+    const double initial_shock = option(options, "initial_shock_pct", 0, -.95, 1);
+    const double execution_spread_bps = option(options, "execution_spread_bps", 0, 0, 1000);
+    std::vector<double> log_returns;
+    for (std::size_t i = 1; i < candles.size(); ++i) log_returns.push_back(std::log(candles[i].close / candles[i - 1].close));
+    const double mean = std::accumulate(log_returns.begin(), log_returns.end(), 0.0) / log_returns.size();
+    double squared = 0;
+    for (double r : log_returns) squared += (r - mean) * (r - mean);
+    const double sigma = log_returns.size() > 1 ? std::sqrt(squared / (log_returns.size() - 1)) : 0;
+    std::mt19937 generator(static_cast<unsigned>(seed));
+    std::normal_distribution<double> normal(0, 1);
+    std::uniform_int_distribution<std::size_t> start(0, log_returns.size() - 1);
+    std::vector<std::vector<double>> step_values(horizon + 1);
+    for (auto& step : step_values) step.reserve(paths);
+    std::vector<double> terminal, drawdowns;
+    json samples = json::array();
+    int loss_count = 0;
+    for (int path = 0; path < paths; ++path) {
+        // A one-off entry spread and shock affect step 1, preserving step 0 = capital.
+        double log_wealth = std::log(capital), peak = capital, path_drawdown = 0;
+        std::size_t block_start = 0;
+        std::vector<double> sample{capital};
+        step_values[0].push_back(capital);
+        for (int step = 1; step <= horizon; ++step) {
+            double increment;
+            if (method == "bootstrap") {
+                if ((step - 1) % block_size == 0) block_start = start(generator);
+                const auto index = (block_start + static_cast<std::size_t>((step - 1) % block_size)) % log_returns.size();
+                increment = mean + volatility_multiplier * (log_returns[index] - mean);
+            } else {
+                // Estimate GBM arithmetic drift as mean(log returns) + sigma^2/2.
+                // Volatility stress changes sigma but preserves the original fitted arithmetic drift.
+                const double stressed_sigma = sigma * volatility_multiplier;
+                const double arithmetic_drift = mean + .5 * sigma * sigma;
+                increment = arithmetic_drift - .5 * stressed_sigma * stressed_sigma + stressed_sigma * normal(generator);
+            }
+            increment += annual_drift_shift / trading_days;
+            if (step == 1) increment += std::log1p(initial_shock) + std::log1p(-execution_spread_bps / 10000);
+            log_wealth += increment;
+            require(log_wealth > -700 && log_wealth < 700, "Simulation wealth exceeds supported numerical range");
+            const double wealth = std::exp(log_wealth);
+            peak = std::max(peak, wealth);
+            path_drawdown = std::max(path_drawdown, 1 - wealth / peak);
+            step_values[step].push_back(wealth);
+            if (path < 30) sample.push_back(wealth);
+        }
+        const double last = step_values[horizon].back();
+        terminal.push_back(last);
+        drawdowns.push_back(path_drawdown);
+        if (last < capital - 1e-8) ++loss_count;
+        if (path < 30) samples.push_back(sample);
+    }
+    const double p05 = quantile(terminal, .05), p50 = quantile(terminal, .5), p95 = quantile(terminal, .95);
+    std::sort(terminal.begin(), terminal.end());
+    // Fractional weighting makes the expected shortfall exactly the worst 5% mass.
+    const double tail_mass = paths * .05;
+    const auto full_count = static_cast<std::size_t>(std::floor(tail_mass));
+    double tail_sum = std::accumulate(terminal.begin(), terminal.begin() + full_count, 0.0);
+    if (full_count < terminal.size()) tail_sum += (tail_mass - full_count) * terminal[full_count];
+    const double tail_mean = tail_sum / tail_mass;
+    json percentiles = json::array();
+    for (int step = 0; step <= horizon; ++step) {
+        percentiles.push_back({{"step", step}, {"p05", quantile(step_values[step], .05)},
+                               {"p50", quantile(step_values[step], .5)}, {"p95", quantile(step_values[step], .95)}});
+    }
+    return {{"method", method}, {"seed", seed}, {"summary", {{"p05", p05}, {"p50", p50}, {"p95", p95},
+            {"probability_loss", static_cast<double>(loss_count) / paths}, {"var95", std::max(0.0, capital - p05)},
+            {"expected_shortfall95", std::max(0.0, capital - tail_mean)},
+            {"max_drawdown_p50", quantile(drawdowns, .5)}, {"max_drawdown_p95", quantile(drawdowns, .95)}}},
+            {"percentiles", percentiles}, {"sample_paths", samples},
+            {"calibration", {{"daily_log_mean", mean}, {"daily_log_volatility", sigma}, {"observations", log_returns.size()},
+            {"volatility_multiplier", volatility_multiplier}, {"annual_drift_shift", annual_drift_shift},
+            {"initial_shock_pct", initial_shock}, {"execution_spread_bps", execution_spread_bps}}},
+            {"assumptions", {"Conditional scenarios, not price predictions or confidence intervals for true future prices.",
+            "Daily closes and 252 sessions/year are assumed. Input history must be adjusted consistently for corporate actions.",
+            "Bootstrap samples circular contiguous blocks of log returns; blocks may wrap across history ends.",
+            "GBM fits daily log mean and sample log volatility; arithmetic drift = log mean + 0.5 * variance.",
+            "Historical drift is noisy. Both methods omit structural breaks, liquidity crises, dividends and trading taxes.",
+            "VaR/expected shortfall are nonnegative currency losses relative to starting capital. ES averages worst 5% probability mass.",
+            "Stress adds an annual log-drift shift, scales volatility, and applies one initial shock and entry spread charge.",
+            "A fixed seed reproduces paths for this engine build; standard-library normal generators can differ across compilers."}}};
+}
+
+json depth(const json& request) {
+    require(request.contains("bids") && request.contains("asks"), "Depth requires bids and asks");
+    auto parse_side = [](const json& levels, bool is_bid) {
+        require(levels.is_array() && !levels.empty() && levels.size() <= 1000, "Depth sides require 1 to 1000 levels");
+        std::vector<std::pair<double, double>> result;
+        for (const auto& level : levels) {
+            require(level.is_object() && level.contains("price") && level.contains("quantity"), "Depth level requires price and quantity");
+            const double price = number(level.at("price"), "depth price"), quantity = number(level.at("quantity"), "depth quantity");
+            require(price > 0 && price <= 1e12 && quantity >= 0 && quantity <= 1e15, "Invalid depth price or quantity");
+            result.emplace_back(price, quantity);
+        }
+        std::sort(result.begin(), result.end(), [is_bid](const auto& a, const auto& b) { return is_bid ? a.first > b.first : a.first < b.first; });
+        for (std::size_t i = 1; i < result.size(); ++i) require(result[i].first != result[i - 1].first, "Duplicate depth price level");
+        return result;
+    };
+    const auto bids = parse_side(request.at("bids"), true), asks = parse_side(request.at("asks"), false);
+    require(bids.front().first < asks.front().first, "Crossed or locked order book is not supported");
+    const double midpoint = (bids.front().first + asks.front().first) / 2;
+    const double spread = asks.front().first - bids.front().first;
+    const double bid_total = std::accumulate(bids.begin(), bids.end(), 0.0, [](double v, const auto& l) { return v + l.second; });
+    const double ask_total = std::accumulate(asks.begin(), asks.end(), 0.0, [](double v, const auto& l) { return v + l.second; });
+    const auto imbalance = [](double bid, double ask) { return bid + ask > 0 ? json((bid - ask) / (bid + ask)) : json(nullptr); };
+    json bid_rows = json::array(), ask_rows = json::array();
+    for (const auto& [price, quantity] : bids) bid_rows.push_back({{"price", price}, {"quantity", quantity}});
+    for (const auto& [price, quantity] : asks) ask_rows.push_back({{"price", price}, {"quantity", quantity}});
+    return {{"spread", spread}, {"spread_bps", spread / midpoint * 10000}, {"midpoint", midpoint},
+            {"top_imbalance", imbalance(bids.front().second, asks.front().second)}, {"depth_imbalance", imbalance(bid_total, ask_total)},
+            {"bid_quantity", bid_total}, {"ask_quantity", ask_total}, {"levels", {{"bids", bid_rows}, {"asks", ask_rows}}},
+            {"assumptions", {"Displayed resting liquidity snapshot only; not executed trade flow.",
+            "No CVD, aggressor classification or order cancellations are inferred from this snapshot.",
+            "Depth imbalance compares the supplied levels; use equal depth and contemporaneous snapshots for comparisons.",
+            "Spoofing, hidden liquidity and feed sampling can distort apparent imbalance."}}};
+}
+} // namespace
+
+json execute(const json& request) {
+    require(request.is_object(), "Request must be an object");
+    require(request.contains("command") && request.at("command").is_string(), "command is required");
+    const std::string command = request.at("command");
+    const json options = request.value("options", json::object());
+    require(options.is_object(), "options must be an object");
+    json result;
+    if (command == "depth") {
+        result = depth(request);
+    } else {
+        require(command == "analyze" || command == "backtest" || command == "simulate", "Unknown command");
+        const auto candles = candles_from(request);
+        if (command == "analyze") result = analyze(candles);
+        else if (command == "backtest") result = backtest(candles, options);
+        else result = simulate(candles, options);
+    }
+    result["supported_features"] = {"OHLCV context", "cash long-only next-open backtests", "conditional Monte Carlo", "displayed depth snapshots"};
+    result["limitations"] = {{"corporate_actions_processed", false}, {"executed_order_flow_inferred", false},
+                             {"live_execution_supported", false}, {"daily_bar_annualization", true}};
+    return result;
+}
+} // namespace finance

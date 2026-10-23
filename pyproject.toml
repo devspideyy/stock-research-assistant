@@ -1,0 +1,17 @@
+[project]
+name = "stock-research-assistant"
+version = "0.1.0"
+description = "C++ quantitative research engine and Python stock research workstation"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = ["engine/third_party", ".tools", ".venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
