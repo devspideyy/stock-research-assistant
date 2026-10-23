@@ -140,4 +140,4 @@ docs/              Methodology and placement preparation
 
 Verify a permitted live-data account and data coverage; add genuine timestamped news and archived depth only where available; implement corporate actions and dated fees; evaluate held-out/forward periods; compare single versus multiple agents under matched evidence and budgets. A compact fundamentals panel should use dated, sourced figures before supporting investment-horizon conclusions.
 
-The intended GitHub owner is `devspideyy`. Remote creation/push depends on authenticated access to that account; the local source does not require it.
+Repository: [devspideyy/stock-research-assistant](https://github.com/devspideyy/stock-research-assistant). It is private, so sign in to the owner account to view it. The local application works independently of GitHub.
