@@ -38,13 +38,21 @@ ctest --test-dir engine/build --output-on-failure -C Release
 - Deterministic research reports/educational answers plus optional OpenRouter and Ollama providers.
 - A separate monitoring worker with persisted events/heartbeats and demo replay; optional authenticated read-only quote access is account-dependent.
 
-The full source tree is editable in VS Code. The research outline is [PROJECT_OUTLINE_AND_RESEARCH.md](PROJECT_OUTLINE_AND_RESEARCH.md); implementation details and limits here take precedence over planned features in that document.
+The full source tree is editable in Antigravity IDE. The research outline is [PROJECT_OUTLINE_AND_RESEARCH.md](PROJECT_OUTLINE_AND_RESEARCH.md); implementation details and limits here take precedence over planned features in that document.
 
-## Use VS Code
+## Use Antigravity IDE
 
-Open this folder through **File > Open Folder**, or run `code .` from its terminal. Start with `engine/src/engine.cpp` for the C++ calculations and `app/dashboard.py` for the interface.
+Open this folder in **Antigravity IDE** through **File > Open Folder**. Start with `engine/src/engine.cpp` for the C++ calculations and `app/dashboard.py` for the interface.
 
-After the environment/compiler setup above, choose **Terminal > Run Task** to build the C++ engine, run the dashboard or run tests. **Ctrl+Shift+B** builds the engine. The dashboard is a browser application; source files and its terminal output remain visible in VS Code. Stop a dashboard task with **Ctrl+C** before starting another instance on the same port.
+After the environment/compiler setup above, choose **Terminal > Run Task** to build the C++ engine, run the dashboard or run tests. **Ctrl+Shift+B** builds the engine. The dashboard task now opens the app in your default browser and reuses a healthy server already running on port 8517.
+
+You can also start it from the project terminal:
+
+```powershell
+.\.venv\Scripts\python.exe start_app.py
+```
+
+This launcher checks readiness before opening the browser. A new server runs separately from the launcher; startup errors are saved to `runs/dashboard.log`. For a different port use `start_app.py --port 8518`. The local address works on the computer running the server; it is not a publicly hosted website. The original `scripts/run_dashboard.py` command remains available to run a foreground server with terminal logs and **Ctrl+C** to stop it.
 
 On the original development laptop the dependencies and native executable are already prepared; run the dashboard task without repeating setup. Optional Python and Microsoft C/C++ editor extensions provide navigation and debugging, but the app does not require them to launch.
 

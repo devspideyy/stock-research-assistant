@@ -16,7 +16,7 @@
       "type": "process",
       "command": "${workspaceFolder}/.venv/bin/python",
       "windows": { "command": "${workspaceFolder}/.venv/Scripts/python.exe" },
-      "args": ["scripts/run_dashboard.py"],
+      "args": ["start_app.py"],
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": []
     },
