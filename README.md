@@ -40,6 +40,14 @@ ctest --test-dir engine/build --output-on-failure -C Release
 
 The full source tree is editable in VS Code. The research outline is [PROJECT_OUTLINE_AND_RESEARCH.md](PROJECT_OUTLINE_AND_RESEARCH.md); implementation details and limits here take precedence over planned features in that document.
 
+## Use VS Code
+
+Open this folder through **File > Open Folder**, or run `code .` from its terminal. Start with `engine/src/engine.cpp` for the C++ calculations and `app/dashboard.py` for the interface.
+
+After the environment/compiler setup above, choose **Terminal > Run Task** to build the C++ engine, run the dashboard or run tests. **Ctrl+Shift+B** builds the engine. The dashboard is a browser application; source files and its terminal output remain visible in VS Code. Stop a dashboard task with **Ctrl+C** before starting another instance on the same port.
+
+On the original development laptop the dependencies and native executable are already prepared; run the dashboard task without repeating setup. Optional Python and Microsoft C/C++ editor extensions provide navigation and debugging, but the app does not require them to launch.
+
 ## Import a price series
 
 Upload UTF-8 CSV in the dashboard with these columns (case-insensitive; `Date` is accepted instead of `timestamp`):
