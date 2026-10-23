@@ -197,3 +197,25 @@ def test_live_monitor_missing_token_does_not_fall_back(monkeypatch):
     assert result["errors"]
     assert result["is_synthetic"] is False
     assert storage.get_heartbeat()["payload"]["status"] == "error"
+
+
+@pytest.mark.parametrize("exchange", ["NSE", "BSE"])
+def test_cash_quote_adapter_accepts_both_exchange_keys(monkeypatch, exchange):
+    key = f"{exchange}_EQ|INE123A01010"
+    monkeypatch.setenv("UPSTOX_ACCESS_TOKEN", "test-placeholder")
+    monkeypatch.setattr(
+        providers,
+        "_http_json",
+        lambda *_args, **_kwargs: {
+            "status": "success",
+            "data": {"example": {"instrument_token": key, "last_price": 100}},
+        },
+    )
+    assert providers.fetch_upstox_quote(key)["instrument_key"] == key
+
+
+@pytest.mark.parametrize("key", ["NSE_FO|TEST", "NSE_EQ|", "BSE_EQ|ABC,NSE_FO|TEST"])
+def test_cash_quote_adapter_rejects_non_cash_or_batched_keys(monkeypatch, key):
+    monkeypatch.setenv("UPSTOX_ACCESS_TOKEN", "test-placeholder")
+    with pytest.raises(providers.ProviderError):
+        providers.fetch_upstox_quote(key)

@@ -5,3 +5,4 @@ requests>=2.32,<3
 pydantic>=2.9,<3
 pytest>=8,<10
 ruff>=0.8,<1
+TA-Lib>=0.6.5,<0.7

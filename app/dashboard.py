@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 
@@ -29,6 +30,7 @@ from app.chat import answer_question
 from app.demo import SYMBOLS, load_demo
 from app.engine_bridge import EngineClient, load_candles_csv
 from app.monitor import run_once
+from app.research_labs import indicator_lab, stock_catalogue
 from app.services import build_evidence, generate_report
 from app.ui_helpers import (
     candle_frame,
@@ -62,6 +64,7 @@ RESULT_KEYS = (
     "depth_result",
     "chat_history",
     "experiment_settings",
+    "indicator_result",
 )
 STRATEGIES = {
     "Price + volume": "price_volume",
@@ -333,6 +336,8 @@ def price_liquidity(dataset: dict) -> None:
         st.caption(
             "Build the evidence card in Overview to add engine-calculated structure and indicators."
         )
+    st.divider()
+    indicator_lab(dataset)
     st.divider()
     st.markdown("### Order-book snapshot lab")
     depth = dataset.get("depth", {})
@@ -679,7 +684,7 @@ def monitoring() -> None:
         mapping = safe_storage(storage.get_setting, "upstox_instruments", default={}) or {}
         with st.form("live_watchlist_form"):
             mappings = st.text_area(
-                "Indian cash-equity symbol mappings (one SYMBOL=NSE_EQ|instrument-key per line)",
+                "Indian cash-equity mappings (one EXCHANGE:SYMBOL=instrument-key per line)",
                 value="\n".join(f"{symbol}={key}" for symbol, key in mapping.items()),
                 placeholder="Use verified instrument keys from your provider's instrument catalogue.",
             )
@@ -694,13 +699,9 @@ def monitoring() -> None:
                         if not line.strip():
                             continue
                         symbol, key = [part.strip() for part in line.split("=", 1)]
-                        if (
-                            not symbol
-                            or not key.startswith("NSE_EQ|")
-                            or len(key.split("|", 1)[1]) < 3
-                        ):
+                        if not symbol or not re.fullmatch(r"(?:NSE_EQ|BSE_EQ)\|[A-Za-z0-9]+", key):
                             raise ValueError(
-                                "Each entry needs a symbol and a verified NSE_EQ cash-equity key."
+                                "Each entry needs a symbol and a verified NSE_EQ or BSE_EQ cash-equity key."
                             )
                         parsed[symbol.upper()] = key
                     if not parsed:
@@ -895,6 +896,7 @@ def main() -> None:
             "Monte Carlo",
             "Research chat",
             "Monitoring",
+            "Stock catalogue",
             "Settings",
         ]
     )
@@ -911,6 +913,8 @@ def main() -> None:
     with tabs[5]:
         monitoring()
     with tabs[6]:
+        stock_catalogue()
+    with tabs[7]:
         settings(provider, model)
     st.divider()
     st.caption(

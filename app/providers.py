@@ -194,8 +194,10 @@ def fetch_upstox_quote(instrument_key: str) -> dict:
         raise ProviderError(
             "UPSTOX_ACCESS_TOKEN is missing. Live monitoring requires your read-only data access."
         )
-    if not instrument_key.startswith("NSE_EQ|"):
-        raise ProviderError("Only NSE_EQ cash-equity instrument keys are accepted in this version.")
+    if not isinstance(instrument_key, str) or not re.fullmatch(
+        r"(?:NSE_EQ|BSE_EQ)\|[A-Za-z0-9]+", instrument_key
+    ):
+        raise ProviderError("Use one verified NSE_EQ or BSE_EQ cash-equity instrument key.")
     result = _http_json(
         "https://api.upstox.com/v2/market-quote/quotes?"
         + urlencode({"instrument_key": instrument_key}),

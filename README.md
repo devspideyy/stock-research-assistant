@@ -31,6 +31,8 @@ ctest --test-dir engine/build --output-on-failure -C Release
 
 - Five fictional watchlist scenarios and validated chronological OHLCV CSV import.
 - C++ prior price levels, relative volume and supporting SMA/EMA/RSI/ATR.
+- A parameterized TA-Lib lab exposing all 158 installed functions, with multi-output charts and exports.
+- Searchable public NSE/BSE company equity identifiers, including SME and surveillance series/groups; catalogue data is separate from prices.
 - Source-linked evidence cards: supporting/opposing observations, missing information, horizon and invalidation conditions.
 - C++ long-or-cash, whole-share backtests with next-observed-open execution, configurable hypothetical fees/slippage and three baselines.
 - C++ circular-block bootstrap and GBM wealth scenarios, seeded runs, loss/tail summaries and sensitivity settings.
@@ -39,6 +41,8 @@ ctest --test-dir engine/build --output-on-failure -C Release
 - A separate monitoring worker with persisted events/heartbeats and demo replay; optional authenticated read-only quote access is account-dependent.
 
 The full source tree is editable in Antigravity IDE. The research outline is [PROJECT_OUTLINE_AND_RESEARCH.md](PROJECT_OUTLINE_AND_RESEARCH.md); implementation details and limits here take precedence over planned features in that document.
+
+Start with [docs/FREE_DATA_SETUP.md](docs/FREE_DATA_SETUP.md) for the two optional provider credentials, free-data coverage and quotas. The complete installed function list is in [docs/INDICATOR_CATALOGUE.md](docs/INDICATOR_CATALOGUE.md). No API key is needed for indicator calculations or the stock identifier catalogue.
 
 ## Use Antigravity IDE
 
@@ -139,6 +143,9 @@ app/providers.py   Free-only OpenRouter / local Ollama adapters
 app/chat.py        Educational and result-grounded answers
 app/monitor.py     Separate worker
 app/storage.py     SQLite run, event and usage records
+app/indicators.py  Compiled TA-Lib catalogue and validated calculations
+app/instruments.py  Public NSE/BSE identifier refresh and local cache
+app/research_labs.py  Indicator controls and stock catalogue interface
 scripts/           Build and launch helpers in Python
 tests/             Boundary and integration checks
 docs/              Methodology and placement preparation

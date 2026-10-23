@@ -86,7 +86,7 @@ def run_once(mode: str = "demo", symbols: list[str] | None = None) -> dict:
             mapping = json.loads(raw_mapping)
         except json.JSONDecodeError:
             raise ValueError(
-                "UPSTOX_INSTRUMENTS must be a JSON object mapping symbols to NSE_EQ keys."
+                "UPSTOX_INSTRUMENTS must be a JSON object mapping symbols to NSE_EQ/BSE_EQ keys."
             ) from None
     if not isinstance(mapping, dict):
         raise ValueError("The Upstox instrument map must be an object.")
@@ -102,7 +102,7 @@ def run_once(mode: str = "demo", symbols: list[str] | None = None) -> dict:
                 instrument = mapping.get(symbol)
                 if not instrument:
                     raise providers.ProviderError(
-                        f"No NSE_EQ instrument key configured for {symbol}; no live request made."
+                        f"No cash-equity instrument key configured for {symbol}; no live request made."
                     )
                 snapshot = providers.fetch_upstox_quote(instrument)
                 quote = snapshot["quote"]
