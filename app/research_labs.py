@@ -3,13 +3,29 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from app import indicators, instruments
+from app import indicators, instruments, storage
 from app.ui_helpers import chart_layout, number
+from app.workspace import safe_storage, save_watchlist_item
+
+
+def apply_indicator_preset(preset: dict) -> None:
+    """Apply saved inputs before Streamlit creates the indicator widgets."""
+    name = preset["function"]
+    st.session_state.indicator_group = "All families"
+    st.session_state.indicator_function = name
+    for key, value in preset["parameters"].items():
+        st.session_state[f"parameter_{name}_{key}"] = value
+    for key, value in preset["price_inputs"].items():
+        st.session_state[f"input_{name}_{key}"] = value
+    st.session_state[f"variable_period_{name}"] = preset["variable_period"]
+    st.session_state.pop("indicator_result", None)
+    st.session_state.pop("indicator_settings", None)
 
 
 def indicator_lab(dataset: dict) -> None:
@@ -18,6 +34,16 @@ def indicator_lab(dataset: dict) -> None:
     if not catalogue:
         st.info("Install the updated project requirements to enable TA-Lib.")
         return
+    presets = safe_storage(storage.get_setting, "indicator_presets", default={}) or {}
+    selector, loader = st.columns([3, 1], vertical_alignment="bottom")
+    selected = selector.selectbox("Saved indicator preset", ["None selected", *presets])
+    loader.button(
+        "Load preset",
+        disabled=selected == "None selected",
+        width="stretch",
+        on_click=apply_indicator_preset,
+        args=(presets.get(selected, {}),),
+    )
     st.caption(
         f"{len(catalogue)} TA-Lib functions: trend, momentum, volatility, volume, patterns, "
         "cycles and statistical/math tools. Calculate a selected function with your own parameters. "
@@ -49,7 +75,11 @@ def indicator_lab(dataset: dict) -> None:
                 )
         variable_period = 20
         if "periods" in info["inputs"].values():
-            variable_period = int(st.number_input("MAVP constant period schedule", 2, 10_000, 20))
+            variable_period = int(
+                st.number_input(
+                    "MAVP constant period schedule", 2, 10_000, 20, key=f"variable_period_{name}"
+                )
+            )
             st.caption(
                 "This lab supplies an explicitly constant schedule to MAVP; it is not adaptive tuning."
             )
@@ -71,11 +101,20 @@ def indicator_lab(dataset: dict) -> None:
                         "MAMA",
                         "T3",
                     ][value],
+                    key=f"parameter_{name}_{key}",
                 )
             elif isinstance(default, int):
-                settings[key] = int(st.number_input(label, 0, 10_000, default, step=1))
+                settings[key] = int(
+                    st.number_input(
+                        label, 0, 10_000, default, step=1, key=f"parameter_{name}_{key}"
+                    )
+                )
             else:
-                settings[key] = float(st.number_input(label, value=float(default), format="%.5f"))
+                settings[key] = float(
+                    st.number_input(
+                        label, value=float(default), format="%.5f", key=f"parameter_{name}_{key}"
+                    )
+                )
         if st.form_submit_button("Calculate selected indicator"):
             try:
                 st.session_state.indicator_result = indicators.calculate(
@@ -85,11 +124,34 @@ def indicator_lab(dataset: dict) -> None:
                     price_inputs,
                     variable_period,
                 )
+                st.session_state.indicator_settings = {
+                    "function": name,
+                    "parameters": settings,
+                    "price_inputs": price_inputs,
+                    "variable_period": variable_period,
+                }
             except (ValueError, RuntimeError) as exc:
                 st.error(str(exc))
     result = st.session_state.get("indicator_result")
     if result:
         st.markdown(f"#### Last calculation: {result['function']} · {result['display_name']}")
+        with st.expander("Save these settings as a preset"):
+            preset_name = st.text_input(
+                "Preset name", value=f"{result['function']} context", max_chars=60
+            ).strip()
+            if st.button(
+                "Save indicator preset", icon=":material/bookmark_add:", disabled=not preset_name
+            ):
+                presets[preset_name] = st.session_state.indicator_settings
+                try:
+                    storage.set_setting("indicator_presets", dict(list(presets.items())[-30:]))
+                    st.toast(
+                        "Preset saved. Load it for any research dataset.",
+                        icon=":material/bookmark:",
+                    )
+                    st.rerun()
+                except (OSError, RuntimeError, sqlite3.Error) as exc:
+                    st.error(f"Preset could not be saved: {exc}")
         st.caption(
             f"Source: {dataset['symbol']} · Warm-up: {result['lookback_bars']} bars · "
             "Warm-up and invalid-domain values remain missing. Recalculate after editing settings."
@@ -208,6 +270,16 @@ def stock_catalogue() -> None:
             format_func=lambda row: f"{row['exchange']} · {row['trading_symbol']} · {row['name']}",
         )
         st.code(selected["instrument_key"], language=None)
+        if st.button("Save stock to research watchlist", icon=":material/bookmark_add:"):
+            if safe_storage(
+                save_watchlist_item,
+                f"{selected['exchange']}:{selected['trading_symbol']}",
+                "Stock identifier",
+                selected["instrument_key"],
+            ):
+                st.success(
+                    "Stock identifier saved. This does not connect a price feed or start monitoring."
+                )
         st.caption(
             "Viewing this identifier does not change the research dataset selected in the sidebar. "
             "Live quotes and price history require your permitted broker token and data connection."

@@ -11,25 +11,25 @@ gatherUsageStats = false
 toolbarMode = "minimal"
 
 [theme]
-base = "light"
-primaryColor = "#147D78"
-backgroundColor = "#FBFCFC"
-secondaryBackgroundColor = "#F0F3F4"
-textColor = "#202E3B"
+base = "dark"
+primaryColor = "#62D9BB"
+backgroundColor = "#111925"
+secondaryBackgroundColor = "#192433"
+textColor = "#E5EDF7"
 font = "sans serif"
 baseFontSize = 14
-headingFontSizes = ["2rem", "1.6rem", "1.2rem", "1.05rem", "1rem", "1rem"]
+headingFontSizes = ["2rem", "1.5rem", "1.15rem", "1rem", "1rem", "1rem"]
 headingFontWeights = [600, 600, 600, 600, 600, 600]
-baseRadius = "0.6rem"
-buttonRadius = "0.5rem"
-borderColor = "#E0E6E8"
-dataframeHeaderBackgroundColor = "#F0F3F4"
+baseRadius = "0.7rem"
+buttonRadius = "0.45rem"
+borderColor = "#2A3749"
+dataframeHeaderBackgroundColor = "#1D2A3C"
 showWidgetBorder = true
 showSidebarBorder = true
-chartCategoricalColors = ["#147D78", "#647D99", "#B58A50", "#8E7EAF", "#B76565"]
+chartCategoricalColors = ["#62D9BB", "#8BAFFF", "#E5BC78", "#B7A2EC", "#EB8498"]
 
 [theme.sidebar]
-backgroundColor = "#F3F6F6"
-secondaryBackgroundColor = "#FFFFFF"
-textColor = "#344655"
-primaryColor = "#147D78"
+backgroundColor = "#0C131E"
+secondaryBackgroundColor = "#182334"
+textColor = "#CAD6E7"
+primaryColor = "#62D9BB"

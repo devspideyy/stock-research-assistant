@@ -46,6 +46,13 @@ from app.ui_helpers import (
     show_items,
     simulation_chart,
 )
+from app.workspace import (
+    go_page,
+    safe_storage,
+    saved_research,
+    sidebar_navigation,
+    sidebar_workspace,
+)
 
 
 st.set_page_config(
@@ -64,6 +71,7 @@ RESULT_KEYS = (
     "chat_history",
     "experiment_settings",
     "indicator_result",
+    "indicator_settings",
 )
 STRATEGIES = {
     "Price + volume": "price_volume",
@@ -80,14 +88,6 @@ def engine_request(operation: str, *args, **kwargs) -> dict | None:
         st.error(str(exc))
         st.caption("Compile the engine with the setup instructions in README.md, then retry.")
         return None
-
-
-def safe_storage(callable_, *args, default=None, **kwargs):
-    try:
-        return callable_(*args, **kwargs)
-    except (RuntimeError, OSError, sqlite3.Error) as exc:
-        st.warning(f"Local storage is unavailable: {exc}")
-        return default
 
 
 def model_controls() -> tuple[str, str | None]:
@@ -131,11 +131,18 @@ def model_controls() -> tuple[str, str | None]:
         return provider, model
 
 
-def select_dataset() -> dict:
-    with st.expander("Choose data · demo or historical CSV", expanded=False):
-        source = st.radio("Data source", ["Synthetic demo", "Upload historical CSV"])
+def select_dataset() -> dict | None:
+    with st.sidebar.expander("Research data", expanded=True):
+        source = st.radio(
+            "Data source", ["Synthetic demo", "Upload historical CSV"], key="data_source"
+        )
         if source == "Synthetic demo":
-            symbol = st.selectbox("Demonstration instrument", SYMBOLS)
+            symbol = st.selectbox(
+                "Demonstration instrument",
+                SYMBOLS,
+                key="demo_symbol",
+                format_func=lambda value: value.replace("DEMO_", "").title(),
+            )
             dataset = load_demo(symbol)
             dataset["bar_interval"] = "1d"
             dataset["decision_time"] = dataset["candles"][-1]["timestamp"] + "T15:30:00+05:30"
@@ -147,14 +154,13 @@ def select_dataset() -> dict:
                 "Use consistent, documented corporate-action adjustments."
             )
             if uploaded is None:
-                st.title("Equity Research Workstation")
-                st.info("Upload a historical OHLCV file to begin, or select the synthetic demo.")
-                st.stop()
+                st.caption("Choose a file to enable research on imported prices.")
+                return None
             try:
                 candles = load_candles_csv(uploaded.getvalue())
             except (ValueError, RuntimeError, OSError) as exc:
                 st.error(f"CSV validation failed: {exc}")
-                st.stop()
+                return None
             dataset = {
                 "symbol": symbol or "UPLOADED_STOCK",
                 "candles": candles,
@@ -186,7 +192,7 @@ def select_dataset() -> dict:
                     dataset.update(load_evidence_json(attachment.getvalue()))
                 except (ValueError, TypeError, KeyError, UnicodeError) as exc:
                     st.error(f"Evidence attachment rejected: {exc}")
-                    st.stop()
+                    return None
         fingerprint = hashlib.sha256(
             json.dumps(
                 {
@@ -212,15 +218,12 @@ def select_dataset() -> dict:
 def overview(dataset: dict, provider: str, model: str | None) -> None:
     candles = dataset["candles"]
     last = candles[-1]
-    with st.expander("How to use this workspace"):
-        st.write(
-            "Choose data → explore Market analysis → compare Backtesting and Monte Carlo results. The demo works without keys."
-        )
-    st.markdown("### Market snapshot")
+    change = float(last["close"]) / float(candles[-2]["close"]) - 1
     with st.container(horizontal=True, gap="small"):
         st.metric(
-            "Sample close" if dataset["is_synthetic"] else "Last close",
+            "Sample close" if dataset["is_synthetic"] else "Historical close",
             number(last["close"]),
+            delta=percent(change) + " vs prior bar",
             border=True,
             width="stretch",
         )
@@ -232,16 +235,78 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
             border=True,
             width="stretch",
         )
-    st.caption(
-        f"Data window: {candles[0]['timestamp']} → {last['timestamp']} · "
-        "Price currency and adjustment basis follow the source; values are not live quotes."
-    )
-    with st.container(border=True):
-        st.markdown("#### Price history")
-        st.plotly_chart(price_chart(candles), width="stretch", config={"displayModeBar": False})
-        st.caption(
-            "Synthetic sample prices" if dataset["is_synthetic"] else "Imported historical prices"
+        st.metric(
+            "Evidence facts",
+            len(st.session_state.get("evidence", {}).get("facts", [])),
+            border=True,
+            width="stretch",
+            help="Build a research brief below to assemble dated facts.",
         )
+    chart_column, desk_column = st.columns([2.4, 1], gap="medium")
+    with chart_column, st.container(border=True):
+        st.caption("MARKET CONTEXT")
+        st.markdown("### Price & participation")
+        period = st.radio(
+            "Chart range",
+            ["1M", "3M", "6M", "All"],
+            index=2,
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        count = {"1M": 21, "3M": 63, "6M": 126, "All": len(candles)}[period]
+        visible = candles[-count:]
+        st.plotly_chart(price_chart(visible), width="stretch", config={"displayModeBar": False})
+        st.caption(
+            f"{visible[0]['timestamp']} — {visible[-1]['timestamp']} · {len(visible)} supplied bars · Not live"
+        )
+    with desk_column:
+        with st.container(border=True):
+            st.caption("RESEARCH DESK")
+            st.markdown("### Your next move")
+            st.caption("Explore the data, test an idea, then challenge the result.")
+            for label, target, icon in [
+                ("Explore market analysis", "Market analysis", "candlestick_chart"),
+                ("Compare strategies", "Backtesting", "query_stats"),
+                ("Explore risk scenarios", "Monte Carlo", "ssid_chart"),
+                ("Ask the assistant", "Assistant", "forum"),
+            ]:
+                st.button(
+                    label,
+                    icon=f":material/{icon}:",
+                    width="stretch",
+                    on_click=go_page,
+                    args=(target,),
+                )
+        with st.container(border=True):
+            st.caption("YOUR WORKSPACE")
+            reports = safe_storage(storage.list_reports, limit=3, default=[]) or []
+            st.markdown("**Recent research**")
+            if reports:
+                for report in reports:
+                    st.caption(
+                        f"{report['evidence']['symbol']} · {report['generated_at'][:10]} · {report['provider']}"
+                    )
+            else:
+                st.caption("No reports saved yet. Build an evidence card below to begin.")
+            st.button(
+                "Open saved research",
+                icon=":material/history:",
+                width="stretch",
+                on_click=go_page,
+                args=("Saved research",),
+            )
+    st.caption(
+        "Research prices and volume follow the supplied source. Demo events are fictional; no live connection is implied."
+    )
+    brief, sources = st.tabs(["Research brief", "News & company evidence"])
+    with brief:
+        research_brief(dataset, provider, model)
+    with sources:
+        company_evidence(dataset)
+
+
+def research_brief(dataset: dict, provider: str, model: str | None) -> None:
+    candles = dataset["candles"]
     st.markdown("### Research brief")
     st.caption("Build an evidence card, then review a source-grounded analyst report.")
     if st.button("Build evidence card", type="primary", width="content"):
@@ -296,7 +361,10 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
             file_name=f"{dataset['symbol']}_report.json",
             mime="application/json",
         )
-    with st.expander("Company fundamentals and publication dates"):
+
+
+def company_evidence(dataset: dict) -> None:
+    with st.expander("Company fundamentals and publication dates", expanded=True):
         fundamentals = dataset.get("fundamentals")
         if fundamentals:
             st.warning(
@@ -309,7 +377,7 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
             st.info(
                 "No verified fundamentals are attached to this historical file. The report must retain this gap."
             )
-    with st.expander("News and company-event evidence"):
+    with st.expander("News and company-event evidence", expanded=True):
         news = dataset.get("news", [])
         if dataset["is_synthetic"]:
             st.caption(
@@ -324,6 +392,22 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
 
 
 def price_liquidity(dataset: dict) -> None:
+    chart_tab, indicators_tab, data_tab = st.tabs(
+        ["Price & volume", "Indicator lab", "Source data"]
+    )
+    with chart_tab:
+        price_structure(dataset)
+    with indicators_tab:
+        indicator_lab(dataset)
+    with data_tab:
+        st.caption(
+            "Supplied OHLCV observations · source quality and adjustment basis require review"
+        )
+        st.dataframe(candle_frame(dataset["candles"]), hide_index=True, width="stretch")
+        company_evidence(dataset)
+
+
+def price_structure(dataset: dict) -> None:
     st.markdown("### Price and volume")
     st.caption(
         "Prior ranges, gaps and relative volume lead the analysis. Moving averages and RSI are supporting context."
@@ -366,11 +450,6 @@ def price_liquidity(dataset: dict) -> None:
         st.caption(
             "Calculate price structure above to add prior ranges, volume context and overlays."
         )
-    st.divider()
-    indicator_lab(dataset)
-
-    with st.expander("Inspect supplied OHLCV observations"):
-        st.dataframe(candle_frame(dataset["candles"]), hide_index=True, width="stretch")
 
 
 def daily_experiment_ready(dataset: dict) -> bool:
@@ -380,7 +459,7 @@ def daily_experiment_ready(dataset: dict) -> bool:
     except ValueError as exc:
         st.warning(str(exc))
         st.caption(
-            "Open Choose data above to confirm the bar interval. Annualized results assume 252 daily observations per year."
+            "Open Research data in the sidebar to confirm the bar interval. Annualized results assume 252 daily observations per year."
         )
         return False
 
@@ -390,7 +469,7 @@ def backtest_lab(dataset: dict) -> None:
     st.write(
         "Compare a price/volume rule, a simple indicator baseline and buy-and-hold on the same observations."
     )
-    st.warning(
+    st.caption(
         "Synthetic experiment only: returns below cannot establish an investment strategy's effectiveness."
         if dataset["is_synthetic"]
         else "Historical results depend on source quality, corporate actions, universe selection and execution assumptions."
@@ -444,6 +523,15 @@ def backtest_lab(dataset: dict) -> None:
         )
         return
     st.caption("Showing the last submitted experiment. Change settings and run again to update it.")
+    with st.container(horizontal=True, gap="small"):
+        for label, result in results.items():
+            st.metric(
+                label,
+                percent(result.get("metrics", {}).get("total_return")),
+                border=True,
+                width="stretch",
+                help="Total return under the submitted assumptions, not a live result.",
+            )
     rows = []
     for label, result in results.items():
         metric = result.get("metrics", {})
@@ -650,11 +738,12 @@ def chatbot(dataset: dict, provider: str, model: str | None) -> None:
 
 def monitoring() -> None:
     st.markdown("### Monitoring centre")
-    st.write(
-        "The background worker and dashboard are separate processes. Monitoring runs only while its host is awake, "
-        "connected and the worker is running. Demo mode replays fixtures. Optional Upstox mode polls read-only snapshots "
-        "using your own permitted account access; it is not a full order-event stream."
-    )
+    with st.expander("How monitoring works"):
+        st.write(
+            "The background worker and dashboard are separate processes. Monitoring runs only while its host is awake, "
+            "connected and the worker is running. Demo mode replays fixtures. Optional Upstox mode polls read-only snapshots "
+            "using your own permitted account access; it is not a full order-event stream."
+        )
     heartbeat = safe_storage(storage.get_heartbeat)
     if heartbeat:
         st.info(
@@ -801,7 +890,7 @@ def settings(provider: str, model: str | None) -> None:
                 {
                     "Component": "Numerical research",
                     "State": "C++ executable; compiled locally",
-                    "Use": "Indicators, tests, depth and simulation",
+                    "Use": "Price/volume analysis, backtests and simulations",
                 },
                 {
                     "Component": "Rules assistant",
@@ -883,6 +972,7 @@ PAGES = {
     "Backtesting": "Compare strategies under the same execution assumptions.",
     "Monte Carlo": "Explore a range of conditional outcomes.",
     "Assistant": "Discuss the evidence and understand your results.",
+    "Saved research": "Your saved evidence cards, analyst reports and research watchlist.",
     "Monitoring": "Watchlist observations and worker activity.",
     "Stock universe": "Discover Indian cash equities across NSE and BSE.",
     "Settings": "Manage connections and understand data availability.",
@@ -890,39 +980,38 @@ PAGES = {
 
 
 def main() -> None:
-    st.sidebar.title("Equity")
-    st.sidebar.caption("OPTIONAL MODEL SETTINGS")
-    st.caption("EQUITY / INDIA CASH EQUITIES")
-    navigation, data_controls = st.columns([1, 1.5])
-    with navigation:
-        page = st.selectbox(
-            "Workspace", list(PAGES), key="workspace_page", label_visibility="collapsed"
-        )
-    with data_controls:
-        dataset = select_dataset()
+    sidebar_navigation()
+    dataset = select_dataset()
+    if dataset is None:
+        for key in RESULT_KEYS:
+            st.session_state.pop(key, None)
+    sidebar_workspace(dataset)
     provider, model = model_controls()
-    st.sidebar.caption("India · Cash equities")
-    st.sidebar.caption(
-        "Local workspace · Connections pending"
-        if not os.getenv("UPSTOX_ACCESS_TOKEN")
-        else "Local workspace · Verify data freshness"
+    st.caption("EQUITY / INDIA CASH EQUITIES / RESEARCH EDITION")
+    page = st.selectbox(
+        "Workspace", list(PAGES), key="workspace_page", width=230, label_visibility="collapsed"
     )
-    research_page = page not in {"Monitoring", "Stock universe", "Settings"}
+    research_page = page not in {"Monitoring", "Stock universe", "Settings", "Saved research"}
     with st.container(
         horizontal=True, vertical_alignment="center", horizontal_alignment="distribute"
     ):
         st.title(page, width="content")
-        if research_page:
+        if research_page and dataset:
             st.badge(
-                "Demo · fictional" if dataset["is_synthetic"] else "Historical CSV",
+                "DEMO / NOT LIVE" if dataset["is_synthetic"] else "HISTORICAL CSV",
                 color="orange" if dataset["is_synthetic"] else "blue",
             )
+    if research_page and dataset is None:
+        st.info(
+            "Upload a historical CSV using Research data in the sidebar, or choose Synthetic demo. Saved research, stock search and settings remain accessible."
+        )
+        st.stop()
     if research_page:
         st.caption(
             dataset["symbol"].replace("DEMO_", "").replace("_", " ").title()
             + " · "
             + (
-                "Fictional data · Not live"
+                f"Fictional data · Daily bars · As of {dataset['candles'][-1]['timestamp']}"
                 if dataset["is_synthetic"]
                 else "Historical CSV · Source quality unverified"
             )
@@ -943,6 +1032,8 @@ def main() -> None:
         monitoring()
     elif page == "Stock universe":
         stock_catalogue()
+    elif page == "Saved research":
+        saved_research()
     else:
         settings(provider, model)
     st.divider()

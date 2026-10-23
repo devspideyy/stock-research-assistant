@@ -29,6 +29,12 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     button(app, "Generate analyst report").click().run()
     assert not app.exception
     assert app.session_state["report"]["provider"] == "rules"
+    button(app, "Saved research").click().run()
+    assert not app.exception
+    assert next(item for item in app.selectbox if item.label == "Saved evidence").value[
+        "data_quality"
+    ]["synthetic"]
+    assert any(item.label == "Saved analyst report" for item in app.selectbox)
     navigate(app, "Backtesting")
     button(app, "Run the three-strategy comparison").click().run()
     assert not app.exception
@@ -55,6 +61,12 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     assert "backtests" not in app.session_state
     assert "simulation" not in app.session_state
     assert "evidence" not in app.session_state
+    next(item for item in app.radio if item.label == "Data source").set_value(
+        "Upload historical CSV"
+    ).run()
+    button(app, "Settings").click().run()
+    assert not app.exception
+    assert app.session_state["workspace_page"] == "Settings"
 
 
 def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
@@ -105,3 +117,41 @@ def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
     selector = next(item for item in app.selectbox if item.label == "Demonstration instrument")
     selector.set_value(SYMBOLS[1]).run()
     assert "indicator_result" not in app.session_state
+
+
+def test_watchlist_and_indicator_presets_survive_new_session(tmp_path, monkeypatch):
+    from app import storage
+
+    monkeypatch.setenv("STOCK_RESEARCH_DB", str(tmp_path / "workspace.sqlite"))
+    app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
+    button(app, "Save instrument to watchlist").click().run()
+    assert not app.exception
+    assert storage.get_setting("research_watchlist")[0]["symbol"] == SYMBOLS[0]
+    assert storage.get_watchlist() == SYMBOLS  # Research bookmarks do not reconfigure the worker.
+    button(app, "Explore market analysis").click().run()
+    assert app.session_state["workspace_page"] == "Market analysis"
+    next(item for item in app.number_input if item.label == "timeperiod").set_value(21)
+    button(app, "Calculate selected indicator").click().run()
+    next(item for item in app.text_input if item.label == "Preset name").set_value("RSI 21 swing")
+    button(app, "Save indicator preset").click().run()
+    assert not app.exception
+    assert (
+        storage.get_setting("indicator_presets")["RSI 21 swing"]["parameters"]["timeperiod"] == 21
+    )
+
+    # A new browser session loads persisted settings, rather than the old widget state.
+    reopened = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
+    button(reopened, "Market analysis").click().run()
+    next(item for item in reopened.selectbox if item.label == "Saved indicator preset").set_value(
+        "RSI 21 swing"
+    ).run()
+    button(reopened, "Load preset").click().run()
+    assert not reopened.exception
+    assert next(item for item in reopened.number_input if item.label == "timeperiod").value == 21
+    button(reopened, "Calculate selected indicator").click().run()
+    assert reopened.session_state["indicator_result"]["parameters"]["timeperiod"] == 21
+    button(reopened, "Saved research").click().run()
+    assert any(item.label == "Saved watchlist item" for item in reopened.selectbox)
+    button(reopened, "Remove from research watchlist").click().run()
+    assert not reopened.exception
+    assert storage.get_setting("research_watchlist") == []

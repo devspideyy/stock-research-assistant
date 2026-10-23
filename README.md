@@ -32,6 +32,7 @@ ctest --test-dir engine/build --output-on-failure -C Release
 - Five fictional watchlist scenarios and validated chronological OHLCV CSV import.
 - C++ prior price levels, relative volume and supporting SMA/EMA/RSI/ATR.
 - A parameterized TA-Lib lab exposing all 158 installed functions, with multi-output charts and exports.
+- Locally saved indicator presets, evidence/report history and a research watchlist.
 - Searchable public NSE/BSE company equity identifiers, including SME and surveillance series/groups; catalogue data is separate from prices.
 - Source-linked evidence cards: supporting/opposing observations, missing information, horizon and invalidation conditions.
 - C++ long-or-cash, whole-share backtests with next-observed-open execution, configurable hypothetical fees/slippage and three baselines.
@@ -46,11 +47,14 @@ Start with [docs/FREE_DATA_SETUP.md](docs/FREE_DATA_SETUP.md) for the two option
 
 ## Dashboard workflow
 
-The **Workspace** selector and **Choose data** panel are at the top of every page,
-including on a narrow screen. Start with Overview, inspect Market analysis, then
-run Backtesting or Monte Carlo. Market analysis has its own calculation button;
-visiting Overview first is optional. AI model controls remain in the optional sidebar.
-All calculations on the demo work offline, without keys. Refresh the browser after an update.
+The sidebar groups navigation into **Research**, **Experiments** and **Workspace**.
+**Research data** contains the demo/CSV selector. The main **Workspace** selector
+also supports navigation when the sidebar is collapsed on a narrow screen.
+Overview combines chart ranges, metrics, research shortcuts and recent reports.
+Market analysis separates price/volume, indicators and source records into tabs.
+Saved research provides evidence/report exports and watchlist management.
+All demo calculations work offline without keys. See [the UI guide](docs/UI_GUIDE.md)
+for presets and the difference between research bookmarks and the worker watchlist.
 
 ## Use Antigravity IDE
 
@@ -163,6 +167,8 @@ app/storage.py     SQLite run, event and usage records
 app/indicators.py  Compiled TA-Lib catalogue and validated calculations
 app/instruments.py  Public NSE/BSE identifier refresh and local cache
 app/research_labs.py  Indicator controls and stock catalogue interface
+app/workspace.py   Sidebar navigation, research bookmarks and saved records
+app/ui_helpers.py  Shared chart styling and evidence/report presentation
 scripts/           Build and launch helpers in Python
 tests/             Boundary and integration checks
 docs/              Methodology and placement preparation
@@ -178,4 +184,9 @@ Repository: [devspideyy/stock-research-assistant](https://github.com/devspideyy/
 
 See the [24 October correctness audit and future research reports](docs/reports/2026-10-24/README.md) for open findings and updated validation status. An intermittent SQLite concurrency failure was observed despite the earlier successful test run.
 
-The workspace uses native Python/Streamlit components: a section navigation rail, an overview price chart, compact metric cards, a neutral light theme and restrained teal chart accents. Data and assistant controls are grouped in sidebar panels. Demo/import status remains visible on each page. No JavaScript, HTML or CSS application files are required. Research results persist while navigating sections.
+The workspace uses native Python/Streamlit components: a full sidebar, chart-led
+overview, metric cards, a dark navy theme and teal/gold accents. Data, watchlist
+and connection controls are grouped in the sidebar. Demo/import status remains
+visible on research pages. No JavaScript, HTML or CSS application files or new
+dependencies were added for the redesign. TradingView integration remains a later
+step; current charts use Plotly. Research results persist while navigating sections.
