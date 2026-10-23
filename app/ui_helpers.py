@@ -13,11 +13,11 @@ import streamlit as st
 
 
 COLORS = {
-    "accent": "#4C9DFF",
-    "positive": "#1AAE91",
-    "negative": "#ED6A68",
-    "muted": "#A7B1C2",
-    "secondary": "#E5AD53",
+    "accent": "#147D78",
+    "positive": "#268B79",
+    "negative": "#C16B70",
+    "muted": "#ADBCC6",
+    "secondary": "#B58A50",
 }
 
 
@@ -82,9 +82,11 @@ def chart_layout(figure: go.Figure, *, height: int = 440) -> go.Figure:
         plot_bgcolor="rgba(0,0,0,0)",
         legend=dict(orientation="h", y=1.06, x=0),
         hovermode="x unified",
+        font=dict(family="Segoe UI, Arial, sans-serif", size=12, color="#526574"),
+        colorway=[COLORS["accent"], "#647D99", COLORS["secondary"], "#8E7EAF"],
     )
     figure.update_xaxes(showgrid=False)
-    figure.update_yaxes(gridcolor="rgba(140,150,170,0.15)", zeroline=False)
+    figure.update_yaxes(gridcolor="rgba(140,150,170,0.12)", zeroline=False)
     return figure
 
 
@@ -138,7 +140,7 @@ def price_chart(
     fig.update_xaxes(type="category", nticks=8, rangeslider_visible=False)
     fig.update_yaxes(title_text="Price", row=1, col=1)
     fig.update_yaxes(title_text="Volume", row=2, col=1)
-    return chart_layout(fig, height=530)
+    return chart_layout(fig, height=420)
 
 
 def depth_chart(bids: list[dict], asks: list[dict]) -> go.Figure:

@@ -11,8 +11,25 @@ gatherUsageStats = false
 toolbarMode = "minimal"
 
 [theme]
-primaryColor = "#2563EB"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F1F5F9"
-textColor = "#0F172A"
+base = "light"
+primaryColor = "#147D78"
+backgroundColor = "#FBFCFC"
+secondaryBackgroundColor = "#F0F3F4"
+textColor = "#202E3B"
 font = "sans serif"
+baseFontSize = 14
+headingFontSizes = ["2rem", "1.6rem", "1.2rem", "1.05rem", "1rem", "1rem"]
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+baseRadius = "0.6rem"
+buttonRadius = "0.5rem"
+borderColor = "#E0E6E8"
+dataframeHeaderBackgroundColor = "#F0F3F4"
+showWidgetBorder = true
+showSidebarBorder = true
+chartCategoricalColors = ["#147D78", "#647D99", "#B58A50", "#8E7EAF", "#B76565"]
+
+[theme.sidebar]
+backgroundColor = "#F3F6F6"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#344655"
+primaryColor = "#147D78"

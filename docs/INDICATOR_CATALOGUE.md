@@ -2,7 +2,7 @@
 
 TA-Lib Python wrapper 0.6.8: **158 functions**. Includes indicators, candlestick patterns and mathematical utilities. Generated from installed function metadata; this is the implemented catalogue, not every proprietary indicator in existence.
 
-Use Price & liquidity > Indicator library in the app. Parameters are editable. Warm-up and invalid numeric-domain values remain missing. A candlestick code is not a probability. BETA/CORREL compare explicitly selected OHLCV columns; an index comparison requires separately aligned benchmark data. MAVP currently accepts an explicitly constant period schedule.
+Use Market analysis > Indicator library in the app. Parameters are editable. Warm-up and invalid numeric-domain values remain missing. A candlestick code is not a probability. BETA/CORREL compare explicitly selected OHLCV columns; an index comparison requires separately aligned benchmark data. MAVP currently accepts an explicitly constant period schedule.
 
 The expanded lab uses the compiled TA-Lib backend. The existing C++ evidence/backtest engine has its own documented initialization conventions. This lab does not change those strategy rules.
 

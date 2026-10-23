@@ -13,6 +13,11 @@ def button(app, label):
     return next(item for item in app.button if item.label == label)
 
 
+def navigate(app, page):
+    next(item for item in app.sidebar.radio if item.label == "Workspace").set_value(page).run()
+    assert not app.exception
+
+
 def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     monkeypatch.setenv("STOCK_RESEARCH_DB", str(tmp_path / "dashboard.sqlite"))
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -24,18 +29,28 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     button(app, "Generate analyst report").click().run()
     assert not app.exception
     assert app.session_state["report"]["provider"] == "rules"
+    navigate(app, "Backtesting")
     button(app, "Run the three-strategy comparison").click().run()
     assert not app.exception
     assert len(app.session_state["backtests"]) == 3
+    navigate(app, "Monte Carlo")
     button(app, "Simulate scenarios").click().run()
     assert not app.exception
     assert app.session_state["simulation"]["summary"]["p05"] > 0
+    navigate(app, "Market analysis")
     button(app, "Inspect displayed-depth balance").click().run()
     assert not app.exception
     assert app.session_state["depth_result"]["spread"] > 0
+    navigate(app, "Assistant")
     app.chat_input[0].set_value("What is drawdown, and why is CVD unavailable?").run()
     assert not app.exception
     assert len(app.session_state["chat_history"]) == 2
+    navigate(app, "Overview")
+    assert app.session_state["backtests"]
+    assert app.session_state["simulation"]
+    navigate(app, "Monitoring")
+    navigate(app, "Settings")
+    navigate(app, "Overview")
     selector = next(
         item for item in app.sidebar.selectbox if item.label == "Demonstration instrument"
     )
@@ -68,6 +83,7 @@ def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
     )
     app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
     assert not app.exception
+    navigate(app, "Market analysis")
     button(app, "Calculate selected indicator").click().run()
     assert not app.exception
     assert app.session_state["indicator_result"]["function"] == "RSI"
@@ -80,6 +96,7 @@ def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
         "macdsignal",
         "macdhist",
     }
+    navigate(app, "Stock universe")
     search = next(
         item for item in app.text_input if item.label == "Search stock symbol, company or ISIN"
     )

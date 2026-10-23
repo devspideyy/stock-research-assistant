@@ -10,7 +10,7 @@ successful authenticated feed tests on this laptop.
 | --- | --- | --- |
 | Upstox Analytics Token | Read-only quotes, history, WebSockets, news, fundamentals and corporate actions | Sign into your own eligible Upstox account, open Developer Apps, select Analytics, Generate Token and copy it locally. Store it as `UPSTOX_ACCESS_TOKEN` in `.env`. |
 | OpenRouter API key | Optional generative reports and chatbot | Create a key in your OpenRouter account and store it as `OPENROUTER_API_KEY` in `.env`. Use `OPENROUTER_MODEL=openrouter/free` or a currently available verified free model. |
-| No key for the stock catalogue | Public NSE/BSE identifiers | Stock catalogue tab → Refresh. |
+| No key for the stock catalogue | Public NSE/BSE identifiers | Stock universe section → Refresh. |
 | No key for indicators | Local OHLCV calculations | TA-Lib is installed with project requirements. |
 | No API key for local Ollama | Optional local LLM | Install Ollama and a suitable model; configure its local URL/name. Local compute and electricity still apply. |
 
@@ -155,7 +155,7 @@ exposes **all 158 functions in the installed TA-Lib 0.6.8 wrapper**, including
 multi-output indicators, patterns and math utilities. This is not a claim to
 implement every proprietary indicator on every charting platform.
 
-Use **Price & liquidity → Indicator library** to choose a family/function, set
+Use **Market analysis → Indicator library** to choose a family/function, set
 parameters/input columns and calculate. The full catalogue is listed in
 [INDICATOR_CATALOGUE.md](INDICATOR_CATALOGUE.md). Warm-up/domain gaps stay missing,
 and results export their library versions and settings. The C++ engine still

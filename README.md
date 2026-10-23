@@ -156,3 +156,7 @@ docs/              Methodology and placement preparation
 Verify a permitted live-data account and data coverage; add genuine timestamped news and archived depth only where available; implement corporate actions and dated fees; evaluate held-out/forward periods; compare single versus multiple agents under matched evidence and budgets. A compact fundamentals panel should use dated, sourced figures before supporting investment-horizon conclusions.
 
 Repository: [devspideyy/stock-research-assistant](https://github.com/devspideyy/stock-research-assistant). It is private, so sign in to the owner account to view it. The local application works independently of GitHub.
+
+## Interface design
+
+The workspace uses native Python/Streamlit components: a section navigation rail, an overview price chart, compact metric cards, a neutral light theme and restrained teal chart accents. Data and assistant controls are grouped in sidebar panels. Demo/import status remains visible on each page. No JavaScript, HTML or CSS application files are required. Research results persist while navigating sections.
