@@ -159,4 +159,6 @@ Repository: [devspideyy/stock-research-assistant](https://github.com/devspideyy/
 
 ## Interface design
 
+See the [24 October correctness audit and future research reports](docs/reports/2026-10-24/README.md) for open findings and updated validation status. An intermittent SQLite concurrency failure was observed despite the earlier successful test run.
+
 The workspace uses native Python/Streamlit components: a section navigation rail, an overview price chart, compact metric cards, a neutral light theme and restrained teal chart accents. Data and assistant controls are grouped in sidebar panels. Demo/import status remains visible on each page. No JavaScript, HTML or CSS application files are required. Research results persist while navigating sections.

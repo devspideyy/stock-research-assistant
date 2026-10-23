@@ -1,0 +1,55 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____________________ test_budget_is_atomic_across_threads _____________________
+
+    def test_budget_is_atomic_across_threads():
+        def reserve(_):
+            try:
+                storage.reserve_usage("openrouter", "chat", "x:free", daily_limit=5)
+                return True
+            except storage.BudgetExceeded:
+                return False
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+>           accepted = list(pool.map(reserve, range(12)))
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_services.py:125:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:619: in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:317: in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:449: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py:401: in __get_result
+    raise self._exception
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_services.py:119: in reserve
+    storage.reserve_usage("openrouter", "chat", "x:free", daily_limit=5)
+app\storage.py:184: in reserve_usage
+    with connection() as db:
+..\..\..\AppData\Local\Programs\Python\Python312\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    @contextmanager
+    def connection() -> Iterator[sqlite3.Connection]:
+        path = Path(os.getenv("STOCK_RESEARCH_DB", "runs/research.sqlite"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(path, timeout=10)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA busy_timeout=10000")
+>       db.execute("PRAGMA journal_mode=WAL")
+E       sqlite3.OperationalError: database is locked
+
+app\storage.py:29: OperationalError
+=========================== short test summary info ===========================
+FAILED tests/test_services.py::test_budget_is_atomic_across_threads - sqlite3...
+1 failed in 1.21s

@@ -1,0 +1,28 @@
+{
+  "empty_depth_level": {
+    "actual_spread": 1.0,
+    "spread_using_positive_quantity_levels": 2
+  },
+  "missing_quote_identity": {
+    "accepted": true
+  },
+  "synthetic_label_without_auxiliary_text": {
+    "actual_flag": false,
+    "expected_flag": true
+  },
+  "date_only_news_cutoff": {
+    "bar_date": "2026-01-23",
+    "publication": "2026-01-23T10:00:00+05:30",
+    "included_as_news_fact": false,
+    "policy_needed": "Explicit exchange session close for a completed daily bar; date alone is not a decision timestamp"
+  },
+  "weekly_bars": {
+    "pass_dashboard_duplicate_date_guard": true,
+    "native_daily_annualization": true
+  },
+  "remapped_symbol_baseline": {
+    "change_since_alert": 1.0,
+    "event_kind": "price_change_observation",
+    "expected": "new instrument baseline; no cross-instrument return"
+  }
+}
