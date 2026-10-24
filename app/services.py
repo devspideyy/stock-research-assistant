@@ -13,6 +13,8 @@ import math
 from datetime import datetime, timezone
 
 from app import providers, storage
+from app.assessment import assess_market
+from app.engine_bridge import validate_daily_candles
 
 
 def _number(value) -> float | None:
@@ -50,6 +52,7 @@ def build_evidence(
     *,
     is_synthetic: bool | None = None,
     decision_time: str | None = None,
+    bar_interval: str = "1d",
 ) -> dict:
     """Build a dated card, including opposing/missing evidence and invalidation.
 
@@ -64,6 +67,8 @@ def build_evidence(
     analysis = analysis or {}
     news = list(news or [])
     fundamentals = fundamentals or {}
+    summary = analysis.get("summary", analysis.get("latest", {}))
+    summary = summary if isinstance(summary, dict) else {}
     # Provenance is supplied by the dataset, never guessed from headline text.
     synthetic = is_synthetic
     if (
@@ -74,6 +79,13 @@ def build_evidence(
     if not isinstance(is_synthetic, bool):
         errors.append("Dataset provenance is unconfirmed; declare whether the input is synthetic.")
     dates = [_timestamp(_time_of(c)) for c in candles]
+    try:
+        validate_daily_candles(
+            [c if "timestamp" in c else dict(c, timestamp=_time_of(c)) for c in candles],
+            bar_interval,
+        )
+    except ValueError as exc:
+        errors.append(str(exc))
     if not candles:
         errors.append("No price observations supplied.")
     if any(d is None for d in dates):
@@ -205,6 +217,21 @@ def build_evidence(
                         "as_of": as_of,
                     }
                 )
+        if summary.get("structure_direction") is not None and summary.get("return_20d") is not None:
+            facts.append(
+                {
+                    "id": "P3",
+                    "text": "Prior ten-bar range structure (-1 lower, 0 mixed, +1 higher), 20-bar return and ATR/close: "
+                    + json.dumps(
+                        {
+                            key: summary.get(key)
+                            for key in ("structure_direction", "return_20d", "atr_pct")
+                        }
+                    ),
+                    "source": "C++ numerical engine; structure uses completed prior bars",
+                    "as_of": as_of,
+                }
+            )
     eligible_news = []
     for item in news[:20]:
         if observed is None:
@@ -293,10 +320,23 @@ def build_evidence(
             "valid": not errors,
             "historical": historical,
             "synthetic": synthetic,
+            "bar_interval": bar_interval,
             "age_hours": round(age_hours, 2) if age_hours is not None else None,
         },
         "execution": "Research observation only; no live trading or order placement.",
+        "numerical_provenance": analysis.get("_provenance", {}),
     }
+    card["assessment"] = assess_market(summary, card["data_quality"], len(candles))
+    case = card["assessment"]
+    if case["bullish"] is not None:
+        facts.append(
+            {
+                "id": "R1",
+                "text": f"{case['scope']}: bullish evidence {case['bullish']}/100; bearish evidence {case['bearish']}/100; scorable factor weight {case['coverage']}/100. {case['recommendation']}. Heuristic points, not calibrated probabilities.",
+                "source": case["version"],
+                "as_of": as_of,
+            }
+        )
     stable = {
         key: value for key, value in card.items() if key not in {"generated_at", "data_quality"}
     }

@@ -27,10 +27,12 @@ import streamlit as st
 
 from app import storage
 from app.attachments import load_evidence_json
+from app.assessment import STRATEGIES
 from app.chat import answer_question
 from app.demo import SYMBOLS, load_demo
 from app.engine_bridge import EngineClient, load_candles_csv, validate_daily_candles
 from app.monitor import run_once
+from app.recommendations import stock_ideas, strategy_guide
 from app.research_labs import indicator_lab, stock_catalogue
 from app.services import build_evidence, generate_report
 from app.ui_helpers import (
@@ -43,8 +45,11 @@ from app.ui_helpers import (
     price_chart,
     render_evidence,
     render_report,
+    render_assessment,
     show_items,
     simulation_chart,
+    terminal_distribution,
+    trade_chart,
 )
 from app.workspace import (
     go_page,
@@ -72,12 +77,8 @@ RESULT_KEYS = (
     "experiment_settings",
     "indicator_result",
     "indicator_settings",
+    "idea_cards",
 )
-STRATEGIES = {
-    "Price + volume": "price_volume",
-    "Buy and hold": "buy_hold",
-    "Indicator baseline": "indicator",
-}
 
 
 def engine_request(operation: str, *args, **kwargs) -> dict | None:
@@ -242,6 +243,19 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
             width="stretch",
             help="Build a research brief below to assemble dated facts.",
         )
+    if st.button("Assess selected stock", type="primary", icon=":material/analytics:"):
+        analysis = engine_request("analyze", candles)
+        if analysis:
+            record_analysis(dataset, analysis)
+            st.rerun()
+    evidence = st.session_state.get("evidence")
+    if evidence:
+        case = evidence.get("assessment", {})
+        with st.expander(
+            f"Stock recommendation · {case.get('stance', 'Unassessed')} · Bull {number(case.get('bullish'), 0)} / Bear {number(case.get('bearish'), 0)}",
+            expanded=True,
+        ):
+            render_assessment(evidence)
     chart_column, desk_column = st.columns([2.4, 1], gap="medium")
     with chart_column, st.container(border=True):
         st.caption("MARKET CONTEXT")
@@ -305,6 +319,23 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
         company_evidence(dataset)
 
 
+def record_analysis(dataset: dict, analysis: dict) -> None:
+    evidence = build_evidence(
+        dataset["candles"],
+        analysis,
+        news=dataset.get("news", []),
+        symbol=dataset["symbol"],
+        fundamentals=dataset.get("fundamentals", {}),
+        is_synthetic=dataset["is_synthetic"],
+        decision_time=dataset.get("decision_time"),
+        bar_interval=dataset.get("bar_interval", "unconfirmed"),
+    )
+    st.session_state.analysis = analysis
+    st.session_state.evidence = evidence
+    st.session_state.pop("report", None)
+    safe_storage(storage.save_evidence, evidence)
+
+
 def research_brief(dataset: dict, provider: str, model: str | None) -> None:
     candles = dataset["candles"]
     st.markdown("### Research brief")
@@ -313,19 +344,7 @@ def research_brief(dataset: dict, provider: str, model: str | None) -> None:
         analysis = engine_request("analyze", candles)
         if analysis is not None:
             try:
-                evidence = build_evidence(
-                    candles,
-                    analysis,
-                    news=dataset.get("news", []),
-                    symbol=dataset["symbol"],
-                    fundamentals=dataset.get("fundamentals", {}),
-                    is_synthetic=dataset["is_synthetic"],
-                    decision_time=dataset.get("decision_time"),
-                )
-                st.session_state.analysis = analysis
-                st.session_state.evidence = evidence
-                st.session_state.pop("report", None)
-                safe_storage(storage.save_evidence, evidence)
+                record_analysis(dataset, analysis)
             except (RuntimeError, ValueError, TypeError) as exc:
                 st.error(f"Evidence could not be assembled: {exc}")
     evidence = st.session_state.get("evidence")
@@ -416,7 +435,7 @@ def price_structure(dataset: dict) -> None:
     if not analysis and st.button("Calculate price structure", type="primary"):
         analysis = engine_request("analyze", dataset["candles"])
         if analysis:
-            st.session_state.analysis = analysis
+            record_analysis(dataset, analysis)
     overlay = st.multiselect(
         "Supporting overlays",
         ["sma20", "ema20"],
@@ -477,11 +496,20 @@ def backtest_lab(dataset: dict) -> None:
     if not daily_experiment_ready(dataset):
         return
     with st.form("backtest_form"):
+        selection = st.multiselect(
+            "Strategies to compare", list(STRATEGIES), default=list(STRATEGIES)
+        )
+        evaluation = st.selectbox(
+            "Evaluation window", ["Last 30% chronological holdout", "Full history (exploratory)"]
+        )
+        st.caption(
+            "Holdout starts in cash; prior bars warm up features only. Rules are fixed hypotheses. Tuning after viewing the holdout invalidates its untouched status."
+        )
         a, b, c = st.columns(3)
         capital = a.number_input("Starting capital", min_value=1000.0, value=100000.0, step=10000.0)
         lookback = b.number_input("Price structure lookback", min_value=2, max_value=200, value=20)
         volume = c.number_input(
-            "Relative-volume threshold", min_value=0.1, max_value=10.0, value=1.2, step=0.1
+            "Breakout relative-volume threshold", min_value=0.1, max_value=10.0, value=1.2, step=0.1
         )
         a, b, c = st.columns(3)
         commission = a.number_input(
@@ -496,7 +524,9 @@ def backtest_lab(dataset: dict) -> None:
             "Cost inputs are simplified research assumptions, not an Indian broker's tax or fee schedule. "
             "A stop price is not a guaranteed execution price."
         )
-        run = st.form_submit_button("Run the three-strategy comparison", type="primary")
+        run = st.form_submit_button(
+            "Run strategy comparison", type="primary", disabled=not selection
+        )
     if run:
         options = dict(
             initial_capital=capital,
@@ -506,14 +536,23 @@ def backtest_lab(dataset: dict) -> None:
             slippage_bps=slippage,
             stop_loss_pct=stop / 100,
             max_exposure=exposure / 100,
+            evaluation_start=int(len(dataset["candles"]) * 0.7)
+            if evaluation.startswith("Last")
+            else 0,
         )
+        if len(dataset["candles"]) - options["evaluation_start"] < 2:
+            st.warning(
+                "The holdout needs at least two daily bars. Supply a longer history or choose Full history."
+            )
+            return
         results = {}
-        for label, strategy in STRATEGIES.items():
+        for label in selection:
+            strategy = STRATEGIES[label]
             result = engine_request("backtest", dataset["candles"], strategy=strategy, **options)
             if result is None:
                 break
             results[label] = result
-        if len(results) == len(STRATEGIES):
+        if len(results) == len(selection):
             st.session_state.backtests = results
             st.session_state.experiment_settings = options
     results = st.session_state.get("backtests")
@@ -539,19 +578,30 @@ def backtest_lab(dataset: dict) -> None:
             {
                 "Strategy": label,
                 "Total return": percent(metric.get("total_return")),
+                "CAGR (daily assumption)": percent(metric.get("cagr")),
                 "Max drawdown": percent(metric.get("max_drawdown")),
                 "Annualized volatility": percent(metric.get("annualized_volatility")),
                 "Sharpe (assumptions apply)": number(metric.get("sharpe")),
                 "Trade count": metric.get("trade_count"),
                 "Turnover": number(metric.get("turnover")),
-                "Exposure": percent(metric.get("exposure")),
+                "Time invested": percent(metric.get("exposure")),
+                "Closed trades": metric.get("closed_trades"),
+                "Win rate (closed trades)": percent(metric.get("win_rate")),
+                "Profit factor": number(metric.get("profit_factor")),
+                "Fees paid": number(metric.get("fees_paid")),
             }
         )
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-    equity, drawdown = equity_charts(results)
+    replay = st.toggle("Animated backtest replay", value=True)
+    st.caption(
+        "Play / Pause and the scrubber replay a completed run. Up to 300 curve points are displayed in replay; metrics use every bar. No new calculation or live feed is started."
+    )
+    equity, drawdown = equity_charts(results, replay=replay)
     st.plotly_chart(equity, width="stretch")
     st.plotly_chart(drawdown, width="stretch")
     selected = st.selectbox("Inspect strategy trades", list(results))
+    st.caption("Evaluation: " + str(results[selected].get("evaluation", {})))
+    st.plotly_chart(trade_chart(dataset["candles"], results[selected]), width="stretch")
     trades = results[selected].get("trades", [])
     if trades:
         st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch")
@@ -573,12 +623,17 @@ def backtest_lab(dataset: dict) -> None:
         file_name=f"{dataset['symbol']}_backtests.json",
         mime="application/json",
     )
+    with st.expander("Strategy rules, market fit and failure cases"):
+        strategy_guide()
 
 
 def monte_carlo_lab(dataset: dict) -> None:
     st.markdown("### Monte Carlo scenario lab")
     st.info(
         "Conditional scenarios, not price forecasts. Change assumptions to explore the sensitivity of possible outcomes."
+    )
+    st.caption(
+        "This models a single invested wealth process from stock returns, not the selected backtest strategy or a diversified portfolio."
     )
     if not daily_experiment_ready(dataset):
         return
@@ -639,7 +694,13 @@ def monte_carlo_lab(dataset: dict) -> None:
     cols[1].metric("Median terminal value", number(summary.get("p50")))
     cols[2].metric("95th-percentile terminal value", number(summary.get("p95")))
     cols[3].metric("Simulated probability of loss", percent(summary.get("probability_loss")))
-    st.plotly_chart(simulation_chart(result), width="stretch")
+    replay = st.toggle("Animated scenario replay", value=True)
+    st.caption(
+        "Play / Pause reveals simulated paths through time. The band is a conditional percentile range, not a confidence interval for the real future; metrics describe the complete run."
+    )
+    st.plotly_chart(simulation_chart(result, replay=replay), width="stretch")
+    with st.expander("Terminal outcome distribution", expanded=True):
+        st.plotly_chart(terminal_distribution(result), width="stretch")
     cols = st.columns(3)
     cols[0].metric("95% value at risk (loss amount)", number(summary.get("var95")))
     cols[1].metric("95% expected shortfall", number(summary.get("expected_shortfall95")))
@@ -969,6 +1030,7 @@ def settings(provider: str, model: str | None) -> None:
 PAGES = {
     "Overview": "A clear view of your research, evidence and next decisions.",
     "Market analysis": "Inspect price structure and volume, then add supporting indicators.",
+    "Stock ideas": "Compare explainable bullish and bearish research cases from available histories.",
     "Backtesting": "Compare strategies under the same execution assumptions.",
     "Monte Carlo": "Explore a range of conditional outcomes.",
     "Assistant": "Discuss the evidence and understand your results.",
@@ -984,14 +1046,21 @@ def main() -> None:
     dataset = select_dataset()
     if dataset is None:
         for key in RESULT_KEYS:
-            st.session_state.pop(key, None)
+            if key != "idea_cards":
+                st.session_state.pop(key, None)
     sidebar_workspace(dataset)
     provider, model = model_controls()
     st.caption("EQUITY / INDIA CASH EQUITIES / RESEARCH EDITION")
     page = st.selectbox(
         "Workspace", list(PAGES), key="workspace_page", width=230, label_visibility="collapsed"
     )
-    research_page = page not in {"Monitoring", "Stock universe", "Settings", "Saved research"}
+    research_page = page not in {
+        "Monitoring",
+        "Stock universe",
+        "Settings",
+        "Saved research",
+        "Stock ideas",
+    }
     with st.container(
         horizontal=True, vertical_alignment="center", horizontal_alignment="distribute"
     ):
@@ -1022,6 +1091,8 @@ def main() -> None:
         overview(dataset, provider, model)
     elif page == "Market analysis":
         price_liquidity(dataset)
+    elif page == "Stock ideas":
+        stock_ideas(dataset)
     elif page == "Backtesting":
         backtest_lab(dataset)
     elif page == "Monte Carlo":

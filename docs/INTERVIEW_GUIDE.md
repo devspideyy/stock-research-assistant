@@ -20,6 +20,9 @@ Only claim features that you can run and explain. A demo fixture is not real-mar
 | Bootstrap versus GBM? | Bootstrap resamples historical return patterns; GBM uses a parametric lognormal price model. Both have model/data risk. |
 | Why can a stop lose more than its setting? | This version observes closes and executes at the next open; overnight gaps and costs can exceed the threshold. |
 | Why might a profitable backtest fail? | Costs, selection bias, tuning to outcomes, structural changes, data errors and uncertain execution. |
+| What do bullish/bearish scores mean? | Transparent, versioned price-evidence weights. They are correlated heuristic points, not calibrated probabilities or a validated valuation rating. Missing factors remain unscored. |
+| How does the holdout work? | The final 30% starts in cash; earlier bars warm up causal features only. No fitting occurs. Tuning after looking at the holdout means it is no longer untouched. |
+| Does animation rerun the experiment? | No. Plotly frames replay completed native results with bounded displayed points and fixed scales. Metrics and exports use the full data. |
 | How do agents differ? | Different evidence roles and a reviewer with explicit inputs/outputs. Test whether they add useful accuracy rather than assuming more agents are better. |
 | What fails when the internet goes away? | External refresh/model calls fail visibly; saved data and native calculations remain available. Worker gaps must be recorded. |
 | How is 24/7 achieved? | A separate worker on an always-awake host, durable checkpoints, retries and heartbeat monitoring. The browser alone is not infrastructure. |

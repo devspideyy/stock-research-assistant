@@ -10,7 +10,7 @@ import streamlit as st
 
 from app import storage
 from app.demo import SYMBOLS
-from app.ui_helpers import json_download, render_evidence, render_report
+from app.ui_helpers import json_download, render_evidence, render_report, render_assessment
 
 
 def safe_storage(callable_, *args, default=None, **kwargs):
@@ -107,6 +107,8 @@ def saved_research() -> None:
                 color="orange",
             )
             render_evidence(selected)
+            if selected.get("assessment"):
+                render_assessment(selected)
             st.download_button(
                 "Export saved evidence",
                 json_download(selected),
@@ -162,6 +164,7 @@ def sidebar_navigation() -> None:
         "RESEARCH": {
             "Overview": "space_dashboard",
             "Market analysis": "candlestick_chart",
+            "Stock ideas": "analytics",
             "Assistant": "forum",
             "Saved research": "history",
         },

@@ -26,6 +26,7 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     button(app, "Build evidence card").click().run()
     assert not app.exception
     assert app.session_state["evidence"]["data_quality"]["synthetic"]
+    assert app.session_state["evidence"]["assessment"]["bullish"] is not None
     button(app, "Generate analyst report").click().run()
     assert not app.exception
     assert app.session_state["report"]["provider"] == "rules"
@@ -36,9 +37,12 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     ]["synthetic"]
     assert any(item.label == "Saved analyst report" for item in app.selectbox)
     navigate(app, "Backtesting")
-    button(app, "Run the three-strategy comparison").click().run()
+    button(app, "Run strategy comparison").click().run()
     assert not app.exception
-    assert len(app.session_state["backtests"]) == 3
+    assert len(app.session_state["backtests"]) == 5
+    assert all(
+        run["evaluation"]["start_index"] == 378 for run in app.session_state["backtests"].values()
+    )
     navigate(app, "Monte Carlo")
     button(app, "Simulate scenarios").click().run()
     assert not app.exception
@@ -117,6 +121,42 @@ def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
     selector = next(item for item in app.selectbox if item.label == "Demonstration instrument")
     selector.set_value(SYMBOLS[1]).run()
     assert "indicator_result" not in app.session_state
+
+
+def test_stock_ideas_preserve_source_and_clear_on_input_change(tmp_path, monkeypatch):
+    monkeypatch.setenv("STOCK_RESEARCH_DB", str(tmp_path / "ideas.sqlite"))
+    app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
+    button(app, "Stock ideas").click().run()
+    next(item for item in app.radio if item.label == "Idea source").set_value(
+        "Five fictional demo scenarios"
+    ).run()
+    button(app, "Assess available stocks").click().run()
+    assert not app.exception
+    assert len(app.session_state["idea_cards"]) == 5
+    for card in app.session_state["idea_cards"]:
+        assert card["assessment"]["bullish"] is not None
+        assert card["assessment"]["scope"] == "Illustrative demo"
+        assert card["action"] == "INSUFFICIENT_EVIDENCE"
+    next(item for item in app.radio if item.label == "Data source").set_value(
+        "Upload historical CSV"
+    ).run()
+    assert (
+        len(app.session_state["idea_cards"]) == 5
+    )  # Independent demo scan survives an unset main CSV.
+    next(item for item in app.selectbox if item.label == "Inspect stock research case").set_value(
+        1
+    ).run()
+    assert not app.exception
+    assert len(app.session_state["idea_cards"]) == 5
+    next(item for item in app.radio if item.label == "Data source").set_value(
+        "Synthetic demo"
+    ).run()
+    next(item for item in app.radio if item.label == "Idea source").set_value(
+        "Current research dataset"
+    ).run()
+    assert "idea_cards" not in app.session_state
+    button(app, "Assess available stocks").click().run()
+    assert len(app.session_state["idea_cards"]) == 1
 
 
 def test_watchlist_and_indicator_presets_survive_new_session(tmp_path, monkeypatch):

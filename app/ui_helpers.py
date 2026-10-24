@@ -10,6 +10,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
+from app.animations import add_replay
+from app.assessment import STRATEGIES, STRATEGY_GUIDE
 
 
 COLORS = {
@@ -163,9 +165,9 @@ def depth_chart(bids: list[dict], asks: list[dict]) -> go.Figure:
     return chart_layout(fig, height=320)
 
 
-def equity_charts(results: dict[str, dict]) -> tuple[go.Figure, go.Figure]:
+def equity_charts(results: dict[str, dict], *, replay: bool = False) -> tuple[go.Figure, go.Figure]:
     equity, drawdown = go.Figure(), go.Figure()
-    palette = [COLORS["accent"], COLORS["muted"], COLORS["secondary"]]
+    palette = [COLORS["accent"], "#8BAFFF", COLORS["secondary"], "#B7A2EC", "#EB8498"]
     for index, (label, result) in enumerate(results.items()):
         rows = result.get("equity", [])
         color = palette[index % len(palette)]
@@ -189,10 +191,13 @@ def equity_charts(results: dict[str, dict]) -> tuple[go.Figure, go.Figure]:
         fig.update_xaxes(type="category", nticks=8)
     equity.update_layout(yaxis_title="Portfolio value")
     drawdown.update_layout(yaxis_title="Drawdown", yaxis_tickformat=".0%")
-    return chart_layout(equity), chart_layout(drawdown, height=270)
+    equity = chart_layout(equity)
+    return (add_replay(equity, label="Observed bar") if replay else equity), chart_layout(
+        drawdown, height=270
+    )
 
 
-def simulation_chart(result: dict) -> go.Figure:
+def simulation_chart(result: dict, *, replay: bool = False) -> go.Figure:
     fig = go.Figure()
     for index, path in enumerate(result.get("sample_paths", [])[:12]):
         fig.add_trace(
@@ -242,7 +247,44 @@ def simulation_chart(result: dict) -> go.Figure:
         xaxis_title="Future observations (daily bars = trading days)",
         yaxis_title="Simulated investment value",
     )
-    return chart_layout(fig)
+    fig = chart_layout(fig)
+    return add_replay(fig, label="Scenario step") if replay else fig
+
+
+def trade_chart(candles: list[dict], result: dict) -> go.Figure:
+    start = result.get("evaluation", {}).get("start", candles[0]["timestamp"])
+    figure = price_chart([row for row in candles if row["timestamp"] >= start])
+    for side, color, marker in [
+        ("BUY", COLORS["positive"], "triangle-up"),
+        ("SELL", COLORS["negative"], "triangle-down"),
+    ]:
+        trades = [row for row in result.get("trades", []) if row["side"] == side]
+        figure.add_trace(
+            go.Scatter(
+                x=[row["timestamp"] for row in trades],
+                y=[row["price"] for row in trades],
+                mode="markers",
+                name=f"Simulated {side.lower()}",
+                marker=dict(color=color, symbol=marker, size=11),
+            ),
+            row=1,
+            col=1,
+        )
+    return figure
+
+
+def terminal_distribution(result: dict) -> go.Figure:
+    bins = result.get("terminal_histogram", [])
+    figure = go.Figure(
+        go.Bar(
+            x=[(row["low"] + row["high"]) / 2 for row in bins],
+            y=[row["count"] for row in bins],
+            marker_color=COLORS["accent"],
+            name="Simulated path count",
+        )
+    )
+    figure.update_layout(xaxis_title="Terminal investment value", yaxis_title="Simulated paths")
+    return chart_layout(figure, height=340)
 
 
 def render_evidence(evidence: dict) -> None:
@@ -306,3 +348,52 @@ def render_report(report: dict) -> None:
 
 def json_download(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def render_assessment(card: dict) -> None:
+    assessment = card.get("assessment")
+    if not assessment or assessment["bullish"] is None:
+        st.info(
+            "Assessment unavailable. Confirm daily bars, provenance and valid prices, then rebuild the evidence card with at least 21 observations."
+        )
+        if card.get("missing"):
+            with st.expander("Data checks and missing evidence"):
+                show_items(card["missing"])
+        return
+    with st.container(border=True):
+        st.caption("STOCK RESEARCH RECOMMENDATION / " + assessment["scope"].upper())
+        st.markdown("### " + assessment["recommendation"])
+        st.caption(
+            f"{card['symbol']} · As of {card['as_of']} · {assessment['regime']} · {assessment['risk']}"
+        )
+        columns = st.columns(3)
+        columns[0].metric("Bullish evidence / 100", assessment["bullish"])
+        columns[1].metric("Bearish evidence / 100", assessment["bearish"])
+        columns[2].metric("Scorable factor weight / 100", assessment["coverage"])
+        st.caption(
+            "Fixed heuristic points—not a probability of profit or an independently validated stock rating. Opposing cases can both have support."
+        )
+        if card["data_quality"].get("synthetic") or card["data_quality"].get("historical"):
+            st.warning(
+                "This assessment describes demo/history only. It cannot be used as a current stock recommendation."
+            )
+        st.caption(
+            f"Research gate: {card['action']} · Long-only cash research; no automated orders."
+        )
+        with st.expander("Why this rating? Inspect every factor"):
+            st.dataframe(pd.DataFrame(assessment["factors"]), hide_index=True, width="stretch")
+            show_items(assessment["limitations"])
+        st.markdown("**Strategy hypotheses to test**")
+        labels = {value: key for key, value in STRATEGIES.items()}
+        for strategy in assessment["strategies"]:
+            st.write(f"**{labels[strategy]}** · {STRATEGY_GUIDE[strategy][1]}")
+        if not assessment["strategies"]:
+            st.write(
+                "Wait / cash benchmark. No long setup is favoured by these rules; bearish is not a short-sale instruction."
+            )
+        with st.expander("Invalidation and missing evidence"):
+            show_items(assessment["invalidation"])
+            show_items(card.get("missing"))
+            support = next((fact["text"] for fact in card["facts"] if fact["id"] == "P2"), None)
+            if support:
+                st.caption(support)

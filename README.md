@@ -35,8 +35,10 @@ ctest --test-dir engine/build --output-on-failure -C Release
 - Locally saved indicator presets, evidence/report history and a research watchlist.
 - Searchable public NSE/BSE company equity identifiers, including SME and surveillance series/groups; catalogue data is separate from prices.
 - Source-linked evidence cards: supporting/opposing observations, missing information, horizon and invalidation conditions.
-- C++ long-or-cash, whole-share backtests with next-observed-open execution, configurable hypothetical fees/slippage and three baselines.
+- Explainable bullish/bearish price-evidence scores, conditional research recommendations and a multi-CSV Stock ideas scanner.
+- C++ long-or-cash backtests comparing five hypotheses, with chronological holdout evaluation, next-open fills, trade markers and net closed-trade statistics.
 - C++ circular-block bootstrap and GBM wealth scenarios, seeded runs, loss/tail summaries and sensitivity settings.
+- Play/Pause/checkpoint replay for backtests and simulations, plus a terminal simulation histogram.
 - Level 2/3 and order-flow research are deferred; the old depth snapshot lab is no longer shown.
 - Deterministic research reports/educational answers plus optional OpenRouter and Ollama providers.
 - A separate monitoring worker with persisted events/heartbeats and demo replay; optional authenticated read-only quote access is account-dependent.
@@ -55,6 +57,11 @@ Market analysis separates price/volume, indicators and source records into tabs.
 Saved research provides evidence/report exports and watchlist management.
 All demo calculations work offline without keys. See [the UI guide](docs/UI_GUIDE.md)
 for presets and the difference between research bookmarks and the worker watchlist.
+
+Use **Assess selected stock** for the current instrument or **Stock ideas** to compare
+available histories. See [recommendation rules and the next research steps](docs/RESEARCH_RECOMMENDATIONS.md)
+for score weights, strategy definitions, replay limits and the remaining validation work.
+Scores are heuristic evidence points, not probabilities; demo/history cards are not current recommendations.
 
 ## Use Antigravity IDE
 
@@ -169,6 +176,9 @@ app/instruments.py  Public NSE/BSE identifier refresh and local cache
 app/research_labs.py  Indicator controls and stock catalogue interface
 app/workspace.py   Sidebar navigation, research bookmarks and saved records
 app/ui_helpers.py  Shared chart styling and evidence/report presentation
+app/assessment.py  Versioned, explainable price-evidence rules and strategy definitions
+app/recommendations.py  Stock-idea scanning and strategy guide
+app/animations.py  Bounded Plotly replay of completed experiments
 scripts/           Build and launch helpers in Python
 tests/             Boundary and integration checks
 docs/              Methodology and placement preparation

@@ -8,6 +8,9 @@ from app import providers
 
 
 GLOSSARY = {
+    "bullish": "Bullish evidence points measure support for a predefined upward-price case. They are heuristic rule weights, not a calibrated probability of profit or a valuation rating.",
+    "bearish": "Bearish evidence points measure support for a downward-price case. For this long-only project a bearish case suggests caution or cash, not a short-sale instruction.",
+    "strateg": "A strategy hypothesis specifies an entry, exit, execution timing and costs. Breakouts, trend pullbacks and range reversion have different failure cases; compare them on a chronological holdout before trusting results.",
     "rsi": "RSI compares average gains and losses over a chosen lookback. It describes recent momentum; an overbought reading alone does not establish a reversal.",
     "drawdown": "Drawdown is the percentage decline from a prior portfolio equity peak. Maximum drawdown is the largest such decline over the observed path; it is not a limit on future losses.",
     "monte carlo": "Monte Carlo generates conditional scenarios from specified assumptions. A bootstrap resamples observed return blocks; GBM assumes a particular continuous return process. Percentiles are model outcomes, not guaranteed forecasts.",
@@ -45,6 +48,12 @@ def answer_question(
             for term in ("why", "alert", "signal", "recommend", "stock", "evidence", "disagree")
         ):
             if evidence:
+                case = evidence.get("assessment", {})
+                if case.get("bullish") is not None:
+                    answers.append(
+                        f"{case['scope']}: {case['recommendation']}. Bullish / bearish evidence points: {case['bullish']} / {case['bearish']} (not probabilities). "
+                        + " ".join(case.get("invalidation", []))
+                    )
                 answers.append(
                     f"Selected card: {evidence.get('symbol', 'unknown')} as of {evidence.get('as_of', 'unknown')}. Python gate: {evidence.get('action', 'unknown')}."
                 )

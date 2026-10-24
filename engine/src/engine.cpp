@@ -101,13 +101,14 @@ std::vector<Candle> candles_from(const json& request) {
 }
 
 struct Features {
-    std::vector<double> sma, ema, rsi, atr, relative_volume, prior_high, prior_low;
+    std::vector<double> sma, ema, rsi, atr, relative_volume, prior_high, prior_low, return20, structure;
 };
 
 Features calculate(const std::vector<Candle>& candles, int lookback = 20) {
     const auto n = candles.size();
     const double missing = std::numeric_limits<double>::quiet_NaN();
     Features f{std::vector<double>(n, missing), std::vector<double>(n, missing),
+               std::vector<double>(n, missing), std::vector<double>(n, missing),
                std::vector<double>(n, missing), std::vector<double>(n, missing),
                std::vector<double>(n, missing), std::vector<double>(n, missing),
                std::vector<double>(n, missing)};
@@ -136,6 +137,23 @@ Features calculate(const std::vector<Candle>& candles, int lookback = 20) {
         if (i == 13) atr /= 14.0;
         if (i > 13) atr = (atr * 13 + true_range) / 14;
         if (i >= 13) f.atr[i] = atr;
+        if (i >= 20) {
+            f.return20[i] = candles[i].close / candles[i - 20].close - 1;
+            // Compare two prior ten-bar ranges; the current candle is excluded.
+            double old_high = 0, new_high = 0;
+            double old_low = candles[i - 20].low, new_low = candles[i - 10].low;
+            for (std::size_t j = i - 20; j < i; ++j) {
+                if (j < i - 10) {
+                    old_high = std::max(old_high, candles[j].high);
+                    old_low = std::min(old_low, candles[j].low);
+                } else {
+                    new_high = std::max(new_high, candles[j].high);
+                    new_low = std::min(new_low, candles[j].low);
+                }
+            }
+            f.structure[i] = new_high > old_high && new_low > old_low ? 1 :
+                             new_high < old_high && new_low < old_low ? -1 : 0;
+        }
 
         if (i > 0) {
             const auto start = i > static_cast<std::size_t>(lookback) ? i - lookback : 0;
@@ -173,7 +191,9 @@ json analyze(const std::vector<Candle>& candles) {
     return {{"summary", {{"last_close", candles[i].close}, {"return_1d", candles[i].close / candles[i - 1].close - 1},
                          {"relative_volume", nullable(f.relative_volume[i])}, {"prior_high", f.prior_high[i]},
                          {"prior_low", f.prior_low[i]}, {"breakout", breakout}, {"sma20", nullable(f.sma[i])},
-                         {"ema20", nullable(f.ema[i])}, {"rsi14", nullable(f.rsi[i])}, {"atr14", nullable(f.atr[i])}}},
+                         {"ema20", nullable(f.ema[i])}, {"rsi14", nullable(f.rsi[i])}, {"atr14", nullable(f.atr[i])},
+                         {"return_20d", nullable(f.return20[i])}, {"structure_direction", nullable(f.structure[i])},
+                         {"atr_pct", nullable(f.atr[i] / candles[i].close)}}},
             {"series", rows}, {"assumptions", {"Indicators are supporting context, not investment forecasts.",
             "Prior levels and relative volume exclude the current candle; up to 20 prior candles are used.",
             "RSI and ATR use Wilder smoothing; EMA seeds from the first close, with 20-bar display warmup."}}};
@@ -181,7 +201,8 @@ json analyze(const std::vector<Candle>& candles) {
 
 json backtest(const std::vector<Candle>& candles, const json& options) {
     const std::string strategy = options.value("strategy", std::string("price_volume"));
-    require(strategy == "price_volume" || strategy == "buy_hold" || strategy == "indicator", "Unknown backtest strategy");
+    require(strategy == "price_volume" || strategy == "buy_hold" || strategy == "indicator" ||
+            strategy == "trend_pullback" || strategy == "range_reversion", "Unknown backtest strategy");
     const int lookback = integer_option(options, "lookback", 20, 2, 1000);
     const double initial = option(options, "initial_capital", 100000, 1, 1e12);
     const double max_exposure = option(options, "max_exposure", 1, 0, 1);
@@ -189,14 +210,17 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
     const double slippage = option(options, "slippage_bps", 5, 0, 1000) / 10000;
     const double stop_loss = option(options, "stop_loss_pct", .08, 0, .99);
     const double volume_threshold = option(options, "volume_threshold", 1.2, 0, 100);
+    const int evaluation_start = integer_option(options, "evaluation_start", 0, 0, static_cast<int>(candles.size()) - 2);
     const auto features = calculate(candles, lookback);
     double cash = initial, position = 0, entry_price = 0, peak = initial, previous_equity = initial;
     double max_drawdown = 0, traded_notional = 0, sum_exposure = 0;
     int pending = 0;
+    double entry_fee = 0, fees_paid = 0, gross_profit = 0, gross_loss = 0, realised_pnl = 0;
+    int closed_trades = 0, wins = 0;
     std::vector<double> returns;
     json equity_curve = json::array(), trades = json::array();
 
-    for (std::size_t i = 0; i < candles.size(); ++i) {
+    for (std::size_t i = static_cast<std::size_t>(evaluation_start); i < candles.size(); ++i) {
         const auto& c = candles[i];
         // Pending signals were created at the previous close. Current OHLC/volume
         // cannot influence an execution at this candle's open.
@@ -204,7 +228,14 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
             const double fill = c.open * (1 - slippage);
             const double notional = position * fill, fee = notional * commission;
             cash += notional - fee;
-            trades.push_back({{"timestamp", c.timestamp}, {"side", "SELL"}, {"quantity", position}, {"price", fill}, {"fee", fee}});
+            const double pnl = position * (fill - entry_price) - entry_fee - fee;
+            realised_pnl += pnl;
+            gross_profit += std::max(pnl, 0.0);
+            gross_loss += std::max(-pnl, 0.0);
+            ++closed_trades;
+            if (pnl > 0) ++wins;
+            fees_paid += fee;
+            trades.push_back({{"timestamp", c.timestamp}, {"side", "SELL"}, {"quantity", position}, {"price", fill}, {"fee", fee}, {"net_pnl", pnl}});
             traded_notional += notional;
             position = 0;
         } else if (i > 0 && pending == 1 && position == 0) {
@@ -218,6 +249,8 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
                 require(cash >= 0, "Internal accounting error: negative cash");
                 position = quantity;
                 entry_price = fill;
+                entry_fee = fee;
+                fees_paid += fee;
                 traded_notional += notional;
                 trades.push_back({{"timestamp", c.timestamp}, {"side", "BUY"}, {"quantity", position}, {"price", fill}, {"fee", fee}});
             }
@@ -228,7 +261,7 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
         peak = std::max(peak, equity);
         const double drawdown = 1 - equity / peak;
         max_drawdown = std::max(max_drawdown, drawdown);
-        if (i > 0) {
+        if (i > static_cast<std::size_t>(evaluation_start)) {
             returns.push_back(equity / previous_equity - 1);
             sum_exposure += position > 0 ? 1.0 : 0.0;
         }
@@ -242,13 +275,27 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
         }
         if (position > 0) {
             const bool stopped = stop_loss > 0 && c.close <= entry_price * (1 - stop_loss);
-            const bool strategy_exit = strategy == "price_volume" ? c.close < features.prior_low[i] :
-                (std::isfinite(features.sma[i]) && c.close < features.sma[i]);
+            const bool strategy_exit = strategy == "indicator" ?
+                (std::isfinite(features.sma[i]) && c.close < features.sma[i]) :
+                strategy == "range_reversion" ?
+                (c.close >= (features.prior_high[i] + features.prior_low[i]) / 2 || c.close < features.prior_low[i]) :
+                c.close < features.prior_low[i];
             if (stopped || strategy_exit) pending = -1;
         } else if (strategy == "price_volume") {
             if (i >= static_cast<std::size_t>(lookback) && c.close > features.prior_high[i] &&
                 std::isfinite(features.relative_volume[i]) && features.relative_volume[i] >= volume_threshold) pending = 1;
-        } else if (std::isfinite(features.sma[i]) && c.close > features.sma[i]) {
+        } else if (strategy == "trend_pullback") {
+            if (i >= 20 && features.structure[i] > 0 && features.return20[i] > 0 &&
+                c.close > candles[i - 1].close && c.close <= features.prior_high[i] &&
+                c.close >= features.prior_high[i] - 1.5 * features.atr[i] &&
+                std::isfinite(features.relative_volume[i]) && features.relative_volume[i] >= 0.8) pending = 1;
+        } else if (strategy == "range_reversion") {
+            const double width = features.prior_high[i] - features.prior_low[i];
+            if (i >= 20 && features.structure[i] == 0 && width > 0 &&
+                std::abs(features.return20[i]) <= 2 * features.atr[i] / c.close &&
+                c.close >= features.prior_low[i] && c.close <= features.prior_low[i] + 0.2 * width &&
+                c.close > candles[i - 1].close) pending = 1;
+        } else if (strategy == "indicator" && std::isfinite(features.sma[i]) && c.close > features.sma[i]) {
             pending = 1;
         }
     }
@@ -257,16 +304,25 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
     for (double value : returns) squared += (value - mean) * (value - mean);
     const double volatility = returns.size() > 1 ? std::sqrt(squared / (returns.size() - 1)) : 0;
     const json sharpe = volatility > 1e-15 ? json(mean / volatility * std::sqrt(trading_days)) : json(nullptr);
+    const double periods = static_cast<double>(candles.size() - evaluation_start - 1);
     return {{"strategy", strategy}, {"metrics", {{"total_return", previous_equity / initial - 1},
             {"max_drawdown", max_drawdown}, {"annualized_volatility", volatility * std::sqrt(trading_days)},
             {"sharpe", sharpe}, {"trade_count", trades.size()}, {"turnover", traded_notional / initial},
-            {"exposure", sum_exposure / static_cast<double>(candles.size() - 1)}}},
+            {"exposure", sum_exposure / periods}, {"closed_trades", closed_trades},
+            {"win_rate", closed_trades ? json(static_cast<double>(wins) / closed_trades) : json(nullptr)},
+            {"profit_factor", gross_loss > 0 ? json(gross_profit / gross_loss) : json(nullptr)},
+            {"realised_pnl", realised_pnl}, {"fees_paid", fees_paid},
+            {"cagr", nullable(std::pow(previous_equity / initial, trading_days / periods) - 1)}}},
+            {"evaluation", {{"start_index", evaluation_start}, {"start", candles[evaluation_start].timestamp},
+                            {"end", candles.back().timestamp}, {"bars", candles.size() - evaluation_start}}},
             {"equity", equity_curve}, {"trades", trades}, {"assumptions", {
             "Long-only cash account; whole shares; no leverage. Signals at close execute at next observed open.",
             "max_exposure caps allocation including entry costs when buying; later price movements may change portfolio exposure.",
             "Slippage and commission apply to buys and sells. Other taxes, exchange fees and market impact must be modelled separately.",
             "Stops are close-based signals executed next open; gaps can exceed the configured stop loss.",
             "Final holdings are marked to final close, with no artificial liquidation; trade_count counts fills.",
+            "Closed-trade win rate and profit factor deduct entry and exit commissions; profit factor is null when there are no losing trades.",
+            "evaluation_start begins in cash; prior bars warm up causal features only. It does not tune or optimise strategy parameters.",
             "Sharpe uses zero risk-free rate; annualized volatility and Sharpe assume DAILY bars and 252 sessions/year.",
             "Corporate actions are not processed. Raw split/dividend events invalidate this accounting. Adjusted OHLC models synthetic adjusted units, not actual historical lots or cash distributions.",
             "Single-stock strategy test: no claims of portfolio diversification or survivorship-bias control."}}};
@@ -354,11 +410,25 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
         percentiles.push_back({{"step", step}, {"p05", quantile(step_values[step], .05)},
                                {"p50", quantile(step_values[step], .5)}, {"p95", quantile(step_values[step], .95)}});
     }
+    json histogram = json::array();
+    const double minimum = terminal.front(), maximum = terminal.back();
+    if (maximum == minimum) {
+        histogram.push_back({{"low", minimum}, {"high", maximum}, {"count", paths}});
+    } else {
+        const double width = (maximum - minimum) / 20;
+        std::vector<int> bins(20, 0);
+        for (double value : terminal) {
+            const int bin = std::min(19, static_cast<int>((value - minimum) / width));
+            ++bins[bin];
+        }
+        for (int i = 0; i < 20; ++i) histogram.push_back({{"low", minimum + i * width},
+            {"high", minimum + (i + 1) * width}, {"count", bins[i]}});
+    }
     return {{"method", method}, {"seed", seed}, {"summary", {{"p05", p05}, {"p50", p50}, {"p95", p95},
             {"probability_loss", static_cast<double>(loss_count) / paths}, {"var95", std::max(0.0, capital - p05)},
             {"expected_shortfall95", std::max(0.0, capital - tail_mean)},
             {"max_drawdown_p50", quantile(drawdowns, .5)}, {"max_drawdown_p95", quantile(drawdowns, .95)}}},
-            {"percentiles", percentiles}, {"sample_paths", samples},
+            {"percentiles", percentiles}, {"sample_paths", samples}, {"terminal_histogram", histogram},
             {"calibration", {{"daily_log_mean", mean}, {"daily_log_volatility", sigma}, {"observations", log_returns.size()},
             {"volatility_multiplier", volatility_multiplier}, {"annual_drift_shift", annual_drift_shift},
             {"initial_shock_pct", initial_shock}, {"execution_spread_bps", execution_spread_bps}}},
