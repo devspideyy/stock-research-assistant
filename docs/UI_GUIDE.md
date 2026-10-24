@@ -5,7 +5,7 @@
 The sidebar contains three groups:
 
 - **Research:** Overview, Market analysis, Assistant and Saved research.
-- **Experiments:** Backtesting and Monte Carlo.
+- **Experiments:** Backtesting, Validation and Monte Carlo.
 - **Workspace:** Stock universe, Monitoring and Settings.
 
 The active section is highlighted. On a narrow screen, expand the sidebar to
@@ -56,6 +56,27 @@ The dark theme is in `.streamlit/config.toml`. Page composition remains in
 `app/research_labs.py` contains indicator/preset controls and stock search.
 `app/ui_helpers.py` holds shared charts and report rendering. The existing SQLite
 settings table stores bookmarks and presets; no new framework, service or database
-schema is required. Numerical C++ and TA-Lib calculation code is unchanged.
+schema is required. `app/experiment_ui.py` groups experiment controls and accounting
+views; `app/validation.py` runs fixed-rule chronological studies. Native accounting
+helpers live in `engine/include/accounting.hpp`.
 
 Live feeds, TradingView chart integration, and Level 2/3 are not part of this UI pass.
+
+## Inspect an offline experiment
+
+Backtesting separates Performance, Equity replay and Trades & accounting. Returns
+use every evaluated bar even when replay reduces displayed points. Select a
+strategy in Trades & accounting to inspect its fees, dividend receivables, action
+ledger and fill markers. The cost model selector switches between hypothetical
+bps and the dated NSE delivery estimate. Inputs take effect on explicit submission.
+
+Validation compares fixed rules over disjoint chronological windows, always with
+buy-and-hold. It can also double charges and slippage. Save a completed study to
+retain it across sessions (most recent 10), or download its JSON. Saved studies
+retain their original instrument and synthetic/history label, independently of the
+currently selected research data. Original source prices are not stored in studies.
+
+Use Research data → Accounting example to test a fictional split and cash dividend.
+The C++ analysis and experiments account for declared actions. The separate TA-Lib
+library and chart candles retain the supplied OHLCV; their raw discontinuities
+should not be interpreted as genuine price moves.

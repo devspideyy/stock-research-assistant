@@ -48,7 +48,7 @@ def _demo_observation(symbol: str) -> tuple[dict, str]:
 
     dataset = load_demo(symbol)
     candles = dataset["candles"]
-    analysis = EngineClient().analyze(candles)
+    analysis = EngineClient().analyze(candles, price_basis="raw")
     # The source is explicit even when no demo headline is available.
     analysis["source"] = "SYNTHETIC deterministic demo/replay"
     evidence = build_evidence(

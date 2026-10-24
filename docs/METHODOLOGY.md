@@ -7,7 +7,7 @@ Does dated event, price/volume and accessible liquidity evidence improve useful 
 ## Three different outputs
 
 1. **Historical observation:** an imported, dated price series or a recorded quote. Store provenance and actual availability. Demo fixtures are synthetic and cannot establish real-market findings.
-2. **Backtest:** accounting over eligible historical observations under frozen rules and assumptions. This implementation uses next-observed-open fills, whole shares, explicit hypothetical costs and final mark-to-market. It does not handle corporate actions or a complete India fee schedule automatically.
+2. **Backtest:** accounting over eligible historical observations under frozen rules and assumptions. This implementation uses next-observed-open fills, whole shares, explicit costs and final mark-to-market. It supports declared raw-price splits/bonuses/gross cash dividends and an editable dated NSE delivery estimate. Events are not automatically fetched; unsupported actions and complete India tax/invoice accounting remain outside scope.
 3. **Scenario:** a C++ bootstrap/GBM simulation conditional on the selected past calibration and stresses. Percentile bands are not bounds on the unknown real future.
 
 ## Evidence card
@@ -42,6 +42,22 @@ Displayed book imbalance compares resting bid/ask quantities. It does not identi
 Circular-block bootstrap samples contiguous log-return blocks, wrapping at the calibration boundary. GBM fits a daily log mean and sample volatility; stress settings change volatility, drift, initial wealth shock and an entry-spread scenario. Historical drift is noisy. Both models can miss structural breaks.
 
 The engine reports wealth percentiles, probability of a terminal loss, and nonnegative currency VaR/expected shortfall relative to starting wealth. Tail expected loss averages the worst 5% probability mass. Inspect the engine's returned assumptions, calibration window and seed before interpreting any value. Repeatability is tied to the pinned engine/compiler, particularly its normal generator.
+
+## Offline accounting and repeated evaluation
+
+Declared events causally normalise native signal prices and split-volume units, while
+executions use raw observed prices and explicit share/cash accounting. Gross dividends
+enter equity as receivables on the supplied ex-date and become spendable on/after the
+supplied pay date. Future events do not rewrite earlier features or fills. MC calibration
+uses event-normalised past returns; it does not simulate future dividend payments.
+
+Validation reserves the first 40% (at least 30 bars) for initial feature history and
+divides the remainder into 2–5 disjoint periods. Each period starts in cash; later
+periods may warm up from earlier observations. Rules are fixed, not trained. Base and
+doubled-cost/slippage conditions use the same periods and a consistently costed
+buy-and-hold benchmark. Fold returns are not compounded into a portfolio result.
+Saved studies retain configuration and native/input hashes; keep the source CSV too.
+See [the detailed contracts and references](ACCOUNTING_AND_VALIDATION.md).
 
 ## Useful primary references
 

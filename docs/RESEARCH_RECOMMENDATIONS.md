@@ -96,8 +96,9 @@ selected active strategy or a diversified portfolio.
 
 1. Obtain permitted real daily histories with dated corporate actions, a benchmark
    and source/publication metadata. Use these to audit the new cases and rules.
-2. Implement corporate-action accounting and dated Indian charges, then add
-   liquidity/lot/circuit and gap scenarios before judging net performance.
+2. Reconcile the implemented declared-action accounting and dated NSE delivery
+   estimates against permitted real examples. Add liquidity/lot/circuit and gap
+   scenarios before judging net performance; unsupported actions remain excluded.
 3. Freeze policies and evaluation windows; compare against benchmarks on a genuine
    untouched period and prospectively logged paper observations. Compare single
    versus multiple LLM roles on identical evidence and call budgets.
@@ -109,12 +110,16 @@ be assessed. Feature count and passing software tests do not establish profitabi
 
 ## Verification for this release
 
-The full Python suite passes 259 tests, including native integration and Streamlit
+The full Python suite passes 274 tests, including native integration and Streamlit
 workflows. The nine existing C++ test groups also pass. Added fixtures cover known
 bullish/bearish cases, missing-volume and daily-interval gates, native provenance,
 holdout timing, causal pullback fills, range exits, both-side fees, histogram totals,
 bounded replay and preservation of terminal values. Both replay controls were checked
 in the browser. No authenticated financial-data or model call was needed.
+
+The offline accounting/validation follow-up adds event-conservation, dividend-payment,
+dated-charge, causal fold, stress and study-persistence checks. See
+[its contracts and limits](ACCOUNTING_AND_VALIDATION.md).
 
 ## References and interpretation
 

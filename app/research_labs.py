@@ -31,6 +31,12 @@ def apply_indicator_preset(preset: dict) -> None:
 def indicator_lab(dataset: dict) -> None:
     catalogue = indicators.catalogue()
     st.markdown("### Indicator library")
+    if dataset.get("corporate_actions"):
+        st.warning(
+            "This TA-Lib library uses supplied OHLCV without event normalisation. "
+            "Declared splits/dividends are handled by C++ analysis and experiments; "
+            "raw discontinuities can distort these separate indicator plots."
+        )
     if not catalogue:
         st.info("Install the updated project requirements to enable TA-Lib.")
         return

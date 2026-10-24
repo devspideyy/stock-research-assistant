@@ -4,6 +4,7 @@ import json
 import math
 from datetime import datetime
 from urllib.parse import urlparse
+from app.accounting import validate_actions
 
 
 def load_evidence_json(raw: bytes | str) -> dict:
@@ -16,6 +17,8 @@ def load_evidence_json(raw: bytes | str) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Evidence must be a JSON object.")
     result = {"news": [], "fundamentals": {}, "depth": {}}
+    if "corporate_actions" in data:
+        result["corporate_actions"] = validate_actions(data["corporate_actions"])
     news = data.get("news", [])
     if not isinstance(news, list) or len(news) > 50:
         raise ValueError("Provide at most 50 news items.")

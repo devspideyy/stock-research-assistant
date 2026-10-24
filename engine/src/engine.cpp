@@ -1,4 +1,5 @@
 #include "engine.hpp"
+#include "accounting.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -104,6 +105,25 @@ struct Features {
     std::vector<double> sma, ema, rsi, atr, relative_volume, prior_high, prior_low, return20, structure;
 };
 
+std::vector<Candle> signal_candles(const std::vector<Candle>& raw, const accounting::ActionPlan& plan) {
+    auto adjusted = raw;
+    for (std::size_t i = 0; i < raw.size(); ++i) {
+        adjusted[i].open *= plan.price_scale[i];
+        adjusted[i].high *= plan.price_scale[i];
+        adjusted[i].low *= plan.price_scale[i];
+        adjusted[i].close *= plan.price_scale[i];
+        adjusted[i].volume /= plan.share_scale[i];
+        require(std::isfinite(adjusted[i].high), "Adjusted signal prices exceed numerical range");
+    }
+    return adjusted;
+}
+
+void use_current_share_units(Features& f, const accounting::ActionPlan& plan) {
+    for (std::size_t i = 0; i < plan.price_scale.size(); ++i)
+        for (auto* series : {&f.sma, &f.ema, &f.atr, &f.prior_high, &f.prior_low})
+            (*series)[i] /= plan.price_scale[i];
+}
+
 Features calculate(const std::vector<Candle>& candles, int lookback = 20) {
     const auto n = candles.size();
     const double missing = std::numeric_limits<double>::quiet_NaN();
@@ -174,8 +194,11 @@ Features calculate(const std::vector<Candle>& candles, int lookback = 20) {
 
 json nullable(double value) { return std::isfinite(value) ? json(value) : json(nullptr); }
 
-json analyze(const std::vector<Candle>& candles) {
-    const auto f = calculate(candles);
+json analyze(const std::vector<Candle>& candles, const json& options) {
+    const auto plan = accounting::prepare_actions(candles, options);
+    const auto adjusted = signal_candles(candles, plan);
+    auto f = calculate(adjusted);
+    use_current_share_units(f, plan);
     const auto i = candles.size() - 1;
     const std::string breakout = candles[i].close > f.prior_high[i] ? "up" :
                                  candles[i].close < f.prior_low[i] ? "down" : "none";
@@ -188,7 +211,7 @@ json analyze(const std::vector<Candle>& candles) {
                         {"relative_volume", nullable(f.relative_volume[k])},
                         {"prior_high", nullable(f.prior_high[k])}, {"prior_low", nullable(f.prior_low[k])}});
     }
-    return {{"summary", {{"last_close", candles[i].close}, {"return_1d", candles[i].close / candles[i - 1].close - 1},
+    return {{"summary", {{"last_close", candles[i].close}, {"return_1d", adjusted[i].close / adjusted[i - 1].close - 1},
                          {"relative_volume", nullable(f.relative_volume[i])}, {"prior_high", f.prior_high[i]},
                          {"prior_low", f.prior_low[i]}, {"breakout", breakout}, {"sma20", nullable(f.sma[i])},
                          {"ema20", nullable(f.ema[i])}, {"rsi14", nullable(f.rsi[i])}, {"atr14", nullable(f.atr[i])},
@@ -206,29 +229,71 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
     const int lookback = integer_option(options, "lookback", 20, 2, 1000);
     const double initial = option(options, "initial_capital", 100000, 1, 1e12);
     const double max_exposure = option(options, "max_exposure", 1, 0, 1);
-    const double commission = option(options, "commission_bps", 10, 0, 1000) / 10000;
+    const accounting::CostModel costs(options);
     const double slippage = option(options, "slippage_bps", 5, 0, 1000) / 10000;
     const double stop_loss = option(options, "stop_loss_pct", .08, 0, .99);
     const double volume_threshold = option(options, "volume_threshold", 1.2, 0, 100);
     const int evaluation_start = integer_option(options, "evaluation_start", 0, 0, static_cast<int>(candles.size()) - 2);
-    const auto features = calculate(candles, lookback);
+    const auto plan = accounting::prepare_actions(candles, options);
+    const auto adjusted = signal_candles(candles, plan);
+    auto features = calculate(adjusted, lookback);
+    use_current_share_units(features, plan);
     double cash = initial, position = 0, entry_price = 0, peak = initial, previous_equity = initial;
     double max_drawdown = 0, traded_notional = 0, sum_exposure = 0;
     int pending = 0;
     double entry_fee = 0, fees_paid = 0, gross_profit = 0, gross_loss = 0, realised_pnl = 0;
     int closed_trades = 0, wins = 0;
+    double receivable = 0, dividend_income = 0, dividend_paid = 0, lot_dividends = 0, stop_reference = 0;
+    struct Payment { std::string date; double amount; };
+    std::vector<Payment> payments;
+    json action_ledger = json::array(), fee_totals = json::object();
+    const auto record_costs = [&](const accounting::Costs& fee) {
+        for (const auto& part : fee.parts.items()) if (part.value().is_number())
+            fee_totals[part.key()] = fee_totals.value(part.key(), 0.0) + part.value().get<double>();
+    };
     std::vector<double> returns;
     json equity_curve = json::array(), trades = json::array();
 
     for (std::size_t i = static_cast<std::size_t>(evaluation_start); i < candles.size(); ++i) {
         const auto& c = candles[i];
+        const std::string day = c.timestamp.substr(0, 10);
+        for (auto it = payments.begin(); it != payments.end();) {
+            if (it->date <= day) {
+                cash += it->amount; receivable -= it->amount; dividend_paid += it->amount;
+                if (std::abs(receivable) < 1e-8) receivable = 0;
+                action_ledger.push_back({{"date", day}, {"type", "dividend_payment"}, {"cash", it->amount}});
+                it = payments.erase(it);
+            } else ++it;
+        }
+        for (const auto& action : plan.on_bar[i]) {
+            if (action.type != "cash_dividend") {
+                const double changed = position * action.multiplier;
+                require(std::abs(changed - std::round(changed)) < 1e-7,
+                        "Fractional share entitlement is unsupported; provide a separate verified cash-in-lieu model");
+                action_ledger.push_back({{"date", day}, {"type", action.type}, {"before", position}, {"after", std::round(changed)}, {"source", action.source}});
+                position = std::round(changed);
+                entry_price /= action.multiplier;
+                stop_reference /= action.multiplier;
+            } else {
+                const double entitlement = position * action.amount;
+                dividend_income += entitlement; lot_dividends += entitlement;
+                stop_reference = std::max(0.0, stop_reference - action.amount);
+                if (action.pay_date <= day) { cash += entitlement; dividend_paid += entitlement; }
+                else { receivable += entitlement; payments.push_back({action.pay_date, entitlement}); }
+                action_ledger.push_back({{"date", day}, {"type", "dividend_entitlement"}, {"cash", entitlement}, {"pay_date", action.pay_date}, {"source", action.source}});
+            }
+        }
         // Pending signals were created at the previous close. Current OHLC/volume
         // cannot influence an execution at this candle's open.
         if (i > 0 && pending == -1 && position > 0) {
             const double fill = c.open * (1 - slippage);
-            const double notional = position * fill, fee = notional * commission;
+            const double notional = position * fill;
+            const auto detail = costs.fee(c.timestamp, notional, true);
+            const double fee = detail.total;
+            require(cash + notional >= fee, "Sale proceeds and cash cannot cover exit charges; bankruptcy is unsupported");
+            record_costs(detail);
             cash += notional - fee;
-            const double pnl = position * (fill - entry_price) - entry_fee - fee;
+            const double pnl = position * (fill - entry_price) - entry_fee - fee + lot_dividends;
             realised_pnl += pnl;
             gross_profit += std::max(pnl, 0.0);
             gross_loss += std::max(-pnl, 0.0);
@@ -236,27 +301,42 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
             if (pnl > 0) ++wins;
             fees_paid += fee;
             trades.push_back({{"timestamp", c.timestamp}, {"side", "SELL"}, {"quantity", position}, {"price", fill}, {"fee", fee}, {"net_pnl", pnl}});
+            if (costs.dated()) trades.back()["fee_components"] = detail.parts;
             traded_notional += notional;
             position = 0;
         } else if (i > 0 && pending == 1 && position == 0) {
             const double fill = c.open * (1 + slippage);
             const double budget = std::min(cash, (cash + position * c.open) * max_exposure);
-            const double quantity = std::floor(budget / (fill * (1 + commission)));
+            const double maximum = std::floor(budget / fill);
+            require(maximum <= 9007199254740991.0, "Share quantity exceeds exact integer range");
+            std::int64_t lo = 0, hi = static_cast<std::int64_t>(maximum);
+            while (lo < hi) {
+                const auto mid = lo + (hi - lo + 1) / 2;
+                if (mid * fill + costs.fee(c.timestamp, mid * fill, false).total <= budget) lo = mid;
+                else hi = mid - 1;
+            }
+            const double quantity = static_cast<double>(lo);
             if (quantity > 0) {
-                const double notional = quantity * fill, fee = notional * commission;
+                const double notional = quantity * fill;
+                const auto detail = costs.fee(c.timestamp, notional, false);
+                const double fee = detail.total;
+                record_costs(detail);
                 cash -= notional + fee;
                 if (cash < 0 && cash > -1e-7) cash = 0;
                 require(cash >= 0, "Internal accounting error: negative cash");
                 position = quantity;
                 entry_price = fill;
+                stop_reference = fill;
+                lot_dividends = 0;
                 entry_fee = fee;
                 fees_paid += fee;
                 traded_notional += notional;
                 trades.push_back({{"timestamp", c.timestamp}, {"side", "BUY"}, {"quantity", position}, {"price", fill}, {"fee", fee}});
+                if (costs.dated()) trades.back()["fee_components"] = detail.parts;
             }
         }
 
-        const double equity = cash + position * c.close;
+        const double equity = cash + position * c.close + receivable;
         require(std::isfinite(equity) && equity > 0, "Portfolio value exceeds supported numerical range");
         peak = std::max(peak, equity);
         const double drawdown = 1 - equity / peak;
@@ -267,14 +347,14 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
         }
         previous_equity = equity;
         equity_curve.push_back({{"timestamp", c.timestamp}, {"equity", equity}, {"drawdown", drawdown},
-                                {"cash", cash}, {"position", position}, {"close", c.close}});
+                                {"cash", cash}, {"position", position}, {"close", c.close}, {"dividend_receivable", receivable}});
         pending = 0;
         if (strategy == "buy_hold") {
             if (position == 0) pending = 1;
             continue;
         }
         if (position > 0) {
-            const bool stopped = stop_loss > 0 && c.close <= entry_price * (1 - stop_loss);
+            const bool stopped = stop_loss > 0 && stop_reference > 0 && c.close <= stop_reference * (1 - stop_loss);
             const bool strategy_exit = strategy == "indicator" ?
                 (std::isfinite(features.sma[i]) && c.close < features.sma[i]) :
                 strategy == "range_reversion" ?
@@ -286,7 +366,7 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
                 std::isfinite(features.relative_volume[i]) && features.relative_volume[i] >= volume_threshold) pending = 1;
         } else if (strategy == "trend_pullback") {
             if (i >= 20 && features.structure[i] > 0 && features.return20[i] > 0 &&
-                c.close > candles[i - 1].close && c.close <= features.prior_high[i] &&
+                adjusted[i].close > adjusted[i - 1].close && c.close <= features.prior_high[i] &&
                 c.close >= features.prior_high[i] - 1.5 * features.atr[i] &&
                 std::isfinite(features.relative_volume[i]) && features.relative_volume[i] >= 0.8) pending = 1;
         } else if (strategy == "range_reversion") {
@@ -294,7 +374,7 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
             if (i >= 20 && features.structure[i] == 0 && width > 0 &&
                 std::abs(features.return20[i]) <= 2 * features.atr[i] / c.close &&
                 c.close >= features.prior_low[i] && c.close <= features.prior_low[i] + 0.2 * width &&
-                c.close > candles[i - 1].close) pending = 1;
+                adjusted[i].close > adjusted[i - 1].close) pending = 1;
         } else if (strategy == "indicator" && std::isfinite(features.sma[i]) && c.close > features.sma[i]) {
             pending = 1;
         }
@@ -312,19 +392,22 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
             {"win_rate", closed_trades ? json(static_cast<double>(wins) / closed_trades) : json(nullptr)},
             {"profit_factor", gross_loss > 0 ? json(gross_profit / gross_loss) : json(nullptr)},
             {"realised_pnl", realised_pnl}, {"fees_paid", fees_paid},
+            {"dividend_income", dividend_income}, {"dividend_paid", dividend_paid}, {"dividend_receivable", receivable},
             {"cagr", nullable(std::pow(previous_equity / initial, trading_days / periods) - 1)}}},
             {"evaluation", {{"start_index", evaluation_start}, {"start", candles[evaluation_start].timestamp},
                             {"end", candles.back().timestamp}, {"bars", candles.size() - evaluation_start}}},
-            {"equity", equity_curve}, {"trades", trades}, {"assumptions", {
+            {"equity", equity_curve}, {"trades", trades}, {"action_ledger", action_ledger}, {"fee_breakdown", fee_totals}, {"assumptions", {
             "Long-only cash account; whole shares; no leverage. Signals at close execute at next observed open.",
             "max_exposure caps allocation including entry costs when buying; later price movements may change portfolio exposure.",
-            "Slippage and commission apply to buys and sells. Other taxes, exchange fees and market impact must be modelled separately.",
+            "Dated cost schedules itemise charges when supplied; otherwise hypothetical commission bps apply. Rounding, tax residency and broker invoice differences remain unmodelled.",
             "Stops are close-based signals executed next open; gaps can exceed the configured stop loss.",
             "Final holdings are marked to final close, with no artificial liquidation; trade_count counts fills.",
             "Closed-trade win rate and profit factor deduct entry and exit commissions; profit factor is null when there are no losing trades.",
             "evaluation_start begins in cash; prior bars warm up causal features only. It does not tune or optimise strategy parameters.",
             "Sharpe uses zero risk-free rate; annualized volatility and Sharpe assume DAILY bars and 252 sessions/year.",
-            "Corporate actions are not processed. Raw split/dividend events invalidate this accounting. Adjusted OHLC models synthetic adjusted units, not actual historical lots or cash distributions.",
+            "Declared raw-price splits/bonuses adjust shares and basis on ex-date; credit latency is not modelled. Fractional entitlements, rights and mergers are rejected.",
+            "Gross dividends accrue to prior holders at ex-date; receivables count in equity but only become spending cash on/after supplied pay_date. Withholding/income tax is excluded.",
+            "Signals use causal forward-normalised price/share units; current-date outputs use current raw units. Unknown actions remain a source-quality risk; adjusted input must not also receive events.",
             "Single-stock strategy test: no claims of portfolio diversification or survivorship-bias control."}}};
 }
 
@@ -336,6 +419,8 @@ double quantile(std::vector<double> values, double probability) {
 }
 
 json simulate(const std::vector<Candle>& candles, const json& options) {
+    const auto action_plan = accounting::prepare_actions(candles, options);
+    const auto adjusted = signal_candles(candles, action_plan);
     const std::string method = options.value("method", std::string("bootstrap"));
     require(method == "bootstrap" || method == "gbm", "Simulation method must be bootstrap or gbm");
     const int paths = integer_option(options, "paths", 1000, 10, 20000);
@@ -349,7 +434,7 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
     const double initial_shock = option(options, "initial_shock_pct", 0, -.95, 1);
     const double execution_spread_bps = option(options, "execution_spread_bps", 0, 0, 1000);
     std::vector<double> log_returns;
-    for (std::size_t i = 1; i < candles.size(); ++i) log_returns.push_back(std::log(candles[i].close / candles[i - 1].close));
+    for (std::size_t i = 1; i < candles.size(); ++i) log_returns.push_back(std::log(adjusted[i].close / adjusted[i - 1].close));
     const double mean = std::accumulate(log_returns.begin(), log_returns.end(), 0.0) / log_returns.size();
     double squared = 0;
     for (double r : log_returns) squared += (r - mean) * (r - mean);
@@ -436,7 +521,7 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
             "Daily closes and 252 sessions/year are assumed. Input history must be adjusted consistently for corporate actions.",
             "Bootstrap samples circular contiguous blocks of log returns; blocks may wrap across history ends.",
             "GBM fits daily log mean and sample log volatility; arithmetic drift = log mean + 0.5 * variance.",
-            "Historical drift is noisy. Both methods omit structural breaks, liquidity crises, dividends and trading taxes.",
+            "Historical drift is noisy. Declared dividends normalise historical returns; future dividends, payment timing, structural breaks, liquidity crises and trading taxes are not simulated.",
             "VaR/expected shortfall are nonnegative currency losses relative to starting capital. ES averages worst 5% probability mass.",
             "Stress adds an annual log-drift shift, scales volatility, and applies one initial shock and entry spread charge.",
             "A fixed seed reproduces paths for this engine build; standard-library normal generators can differ across compilers."}}};
@@ -489,12 +574,15 @@ json execute(const json& request) {
     } else {
         require(command == "analyze" || command == "backtest" || command == "simulate", "Unknown command");
         const auto candles = candles_from(request);
-        if (command == "analyze") result = analyze(candles);
+        if (command == "analyze") result = analyze(candles, options);
         else if (command == "backtest") result = backtest(candles, options);
         else result = simulate(candles, options);
     }
     result["supported_features"] = {"OHLCV context", "cash long-only next-open backtests", "conditional Monte Carlo", "displayed depth snapshots"};
-    result["limitations"] = {{"corporate_actions_processed", false}, {"executed_order_flow_inferred", false},
+    result["accounting"] = {{"price_basis", options.value("price_basis", std::string("unverified"))},
+                             {"declared_actions", options.value("corporate_actions", json::array()).size()},
+                             {"signal_units", "causal forward-normalised; displayed levels in current raw units"}};
+    result["limitations"] = {{"corporate_actions_processed", options.contains("corporate_actions") && !options["corporate_actions"].empty()}, {"executed_order_flow_inferred", false},
                              {"live_execution_supported", false}, {"daily_bar_annualization", true}};
     return result;
 }

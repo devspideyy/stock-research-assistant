@@ -1,0 +1,19 @@
+{
+  "corporate_actions": [
+    {
+      "type": "split",
+      "ex_date": "2026-01-21",
+      "announced_date": "2026-01-07",
+      "share_multiplier": 2,
+      "source": "Fictional accounting fixture"
+    },
+    {
+      "type": "cash_dividend",
+      "ex_date": "2026-03-18",
+      "announced_date": "2026-03-04",
+      "pay_date": "2026-03-25",
+      "cash_per_share": 2,
+      "source": "Fictional accounting fixture"
+    }
+  ]
+}

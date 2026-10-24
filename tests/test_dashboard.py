@@ -18,6 +18,46 @@ def navigate(app, page):
     assert not app.exception
 
 
+def test_accounting_and_validation_offline_flow(tmp_path, monkeypatch):
+    from app import storage
+
+    monkeypatch.setenv("STOCK_RESEARCH_DB", str(tmp_path / "offline.sqlite"))
+    app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
+    next(item for item in app.radio if item.label == "Data source").set_value(
+        "Accounting example"
+    ).run()
+    navigate(app, "Backtesting")
+    next(item for item in app.selectbox if item.label == "Cost model").set_value(
+        "NSE delivery estimate"
+    ).run()
+    next(item for item in app.selectbox if item.label == "Evaluation window").set_value(
+        "Full history (exploratory)"
+    )
+    button(app, "Run strategy comparison").click().run()
+    assert not app.exception
+    hold = app.session_state["backtests"]["Buy and hold"]
+    assert hold["metrics"]["dividend_income"] > 0
+    assert hold["metrics"]["total_return"] < 0  # flat wealth minus actual configured fees/slippage
+    assert len(hold["action_ledger"]) == 3
+    assert "stt" in hold["fee_breakdown"]
+    navigate(app, "Validation")
+    button(app, "Run validation study").click().run()
+    assert not app.exception
+    assert len(app.session_state["validation_study"]["rows"]) == 12
+    button(app, "Save validation study").click().run()
+    assert not app.exception
+    assert len(storage.get_setting("validation_studies")) == 1
+    reopened = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
+    navigate(reopened, "Validation")
+    assert any(item.label == "Saved validation study" for item in reopened.selectbox)
+    assert not reopened.exception
+    # Loading another source clears the current study, while persisted records remain intact.
+    next(item for item in app.radio if item.label == "Data source").set_value(
+        "Synthetic demo"
+    ).run()
+    assert "validation_study" not in app.session_state
+
+
 def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     monkeypatch.setenv("STOCK_RESEARCH_DB", str(tmp_path / "dashboard.sqlite"))
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)

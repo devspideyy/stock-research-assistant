@@ -8,6 +8,7 @@ import streamlit as st
 
 from app import storage
 from app.assessment import STRATEGIES, STRATEGY_GUIDE
+from app.accounting import market_options
 from app.demo import SYMBOLS, load_demo
 from app.engine_bridge import EngineClient, load_candles_csv, validate_daily_candles
 from app.services import build_evidence
@@ -113,7 +114,7 @@ def stock_ideas(dataset: dict | None) -> None:
                         cutoff = candles[-1]["timestamp"] + "T" + close_time.isoformat() + "+05:30"
                     card = build_evidence(
                         candles,
-                        EngineClient().analyze(candles),
+                        EngineClient().analyze(candles, **market_options(item)),
                         symbol=item["symbol"],
                         news=item.get("news"),
                         fundamentals=item.get("fundamentals"),

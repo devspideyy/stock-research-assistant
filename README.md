@@ -37,6 +37,9 @@ ctest --test-dir engine/build --output-on-failure -C Release
 - Source-linked evidence cards: supporting/opposing observations, missing information, horizon and invalidation conditions.
 - Explainable bullish/bearish price-evidence scores, conditional research recommendations and a multi-CSV Stock ideas scanner.
 - C++ long-or-cash backtests comparing five hypotheses, with chronological holdout evaluation, next-open fills, trade markers and net closed-trade statistics.
+- Declared raw-price split/bonus/dividend accounting, a payment/receivable ledger and a fictional conservation example.
+- Editable, dated NSE delivery-cost estimates alongside hypothetical bps, with per-fill charge breakdowns.
+- Chronological multi-fold Validation with a buy-and-hold benchmark, doubled-cost/slippage stress, local study history and JSON exports.
 - C++ circular-block bootstrap and GBM wealth scenarios, seeded runs, loss/tail summaries and sensitivity settings.
 - Play/Pause/checkpoint replay for backtests and simulations, plus a terminal simulation histogram.
 - Level 2/3 and order-flow research are deferred; the old depth snapshot lab is no longer shown.
@@ -102,7 +105,9 @@ produce insufficient evidence.
 
 Optionally attach a JSON file containing separately sourced `news`, `fundamentals` and/or `depth`. See [examples/evidence_template.json](examples/evidence_template.json) for the exact shape. Replace the fictional example with permitted evidence and its actual publication/source timestamps. The attachment is validated, never fetched from its URLs. Future-dated news/fundamentals are excluded from a historical evidence card; a depth snapshot remains separate from daily investment research. Any synthetic evidence must remain labelled synthetic.
 
-**Corporate actions are not automatically processed.** Select a consistent data convention and account for splits, bonuses and dividends before interpreting a historical result. Raw discontinuous prices invalidate returns. Adjusted OHLC is a research convention, not a reproduction of actual historical whole-share accounting. Recorded output discloses the assumptions.
+Declare the **Price basis**. Raw prices can receive sourced split/bonus/cash-dividend events using the optional action JSON upload. Already-adjusted history must not also receive those events. Events are supplied by you; missing actions are not discovered automatically. Fractional entitlements, rights and mergers are unsupported. Adjusted OHLC remains a research convention rather than actual historical exchange fills. See [accounting and validation](docs/ACCOUNTING_AND_VALIDATION.md) for the format, fee coverage and assumptions.
+
+Choose **Accounting example** in Research data to inspect a fictional 2-for-1 split and cash dividend. In Backtesting, use Full history to include both events; open **Trades & accounting**, then choose Buy and hold. In **Validation**, run a study to compare separate periods and cost sensitivity. No key is needed.
 
 Export a clearly synthetic example if you want to test the importer:
 
@@ -140,7 +145,7 @@ The current version does not automatically stream/record a full exchange order b
 - Configured stops are close-based signals, not guaranteed intraday stop fills.
 - Entry sizing uses whole shares and includes fees; an exposure limit at entry can drift as prices move.
 - Final holdings are marked to the last close; there is no artificial final liquidation.
-- Fees and slippage are hypothetical scenarios. The prototype does not implement the complete dated Indian tax/brokerage schedule.
+- Choose hypothetical bps or an editable NSE delivery estimate with reviewed coverage from 2024-10-01 through 2026-10-24. It is not a complete India tax/invoice engine, and is not a BSE schedule. Slippage remains a scenario.
 - Annualized metrics assume daily observations and 252 sessions/year, with a zero risk-free rate for Sharpe.
 - Monte Carlo output is conditional on historical calibration and explicit stress assumptions. It is not a forecast or guaranteed loss bound.
 - Historical modern-LLM decisions may contain pretrained future knowledge. Keep forward model evaluation separate from numerical strategy tests.

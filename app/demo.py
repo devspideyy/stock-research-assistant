@@ -101,8 +101,58 @@ def load_demo(symbol: str = SYMBOLS[0], count: int = 540) -> dict:
         "depth": depth,
         "fundamentals": fundamentals,
         "is_synthetic": True,
+        "price_basis": "raw",
+        "corporate_actions": [],
         "description": "SYNTHETIC DEMO: fictional prices, events and depth. Weekdays only; not the NSE calendar.",
     }
+
+
+def load_accounting_demo() -> dict:
+    """Known split/dividend fixture, with no random market return to hide ledger errors."""
+    bundle = load_demo(count=160)
+    current = date(2025, 10, 1)
+    dates = []
+    while len(dates) < 160:
+        if current.weekday() < 5:
+            dates.append(current.isoformat())
+        current += timedelta(days=1)
+    for index, row in enumerate(bundle["candles"]):
+        price = 100 if index < 80 else 50 if index < 120 else 48
+        row.update(
+            timestamp=dates[index],
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+            volume=1000 if index < 80 else 2000,
+        )
+    bundle.update(
+        symbol="DEMO_ACCOUNTING",
+        news=[],
+        fundamentals={},
+        depth={},
+        bar_interval="1d",
+        decision_time=dates[-1] + "T15:30:00+05:30",
+        description="Fictional accounting fixture: 2-for-1 split, then Rs 2 dividend per new share. No real security.",
+        corporate_actions=[
+            {
+                "type": "split",
+                "ex_date": dates[80],
+                "announced_date": dates[70],
+                "share_multiplier": 2,
+                "source": "Fictional accounting fixture",
+            },
+            {
+                "type": "cash_dividend",
+                "ex_date": dates[120],
+                "announced_date": dates[110],
+                "pay_date": dates[125],
+                "cash_per_share": 2,
+                "source": "Fictional accounting fixture",
+            },
+        ],
+    )
+    return bundle
 
 
 def main() -> None:

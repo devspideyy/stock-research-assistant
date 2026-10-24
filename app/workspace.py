@@ -168,7 +168,11 @@ def sidebar_navigation() -> None:
             "Assistant": "forum",
             "Saved research": "history",
         },
-        "EXPERIMENTS": {"Backtesting": "query_stats", "Monte Carlo": "ssid_chart"},
+        "EXPERIMENTS": {
+            "Backtesting": "query_stats",
+            "Validation": "fact_check",
+            "Monte Carlo": "ssid_chart",
+        },
         "WORKSPACE": {
             "Stock universe": "travel_explore",
             "Monitoring": "sensors",

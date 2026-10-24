@@ -27,10 +27,23 @@ import streamlit as st
 
 from app import storage
 from app.attachments import load_evidence_json
+from app.accounting import load_actions, market_options
 from app.assessment import STRATEGIES
 from app.chat import answer_question
-from app.demo import SYMBOLS, load_demo
-from app.engine_bridge import EngineClient, load_candles_csv, validate_daily_candles
+from app.demo import SYMBOLS, load_demo, load_accounting_demo
+from app.experiment_ui import (
+    accounting_view,
+    cost_controls,
+    cost_model_selector,
+    data_readiness,
+    validation_lab,
+)
+from app.engine_bridge import (
+    EngineClient,
+    EngineUnavailable,
+    load_candles_csv,
+    validate_daily_candles,
+)
 from app.monitor import run_once
 from app.recommendations import stock_ideas, strategy_guide
 from app.research_labs import indicator_lab, stock_catalogue
@@ -78,6 +91,7 @@ RESULT_KEYS = (
     "indicator_result",
     "indicator_settings",
     "idea_cards",
+    "validation_study",
 )
 
 
@@ -85,9 +99,12 @@ def engine_request(operation: str, *args, **kwargs) -> dict | None:
     try:
         with st.spinner("Running the C++ engine…"):
             return getattr(EngineClient(), operation)(*args, **kwargs)
-    except (RuntimeError, ValueError, OSError) as exc:
+    except EngineUnavailable as exc:
         st.error(str(exc))
         st.caption("Compile the engine with the setup instructions in README.md, then retry.")
+        return None
+    except (RuntimeError, ValueError, OSError) as exc:
+        st.error(str(exc))
         return None
 
 
@@ -135,7 +152,9 @@ def model_controls() -> tuple[str, str | None]:
 def select_dataset() -> dict | None:
     with st.sidebar.expander("Research data", expanded=True):
         source = st.radio(
-            "Data source", ["Synthetic demo", "Upload historical CSV"], key="data_source"
+            "Data source",
+            ["Synthetic demo", "Accounting example", "Upload historical CSV"],
+            key="data_source",
         )
         if source == "Synthetic demo":
             symbol = st.selectbox(
@@ -147,6 +166,9 @@ def select_dataset() -> dict | None:
             dataset = load_demo(symbol)
             dataset["bar_interval"] = "1d"
             dataset["decision_time"] = dataset["candles"][-1]["timestamp"] + "T15:30:00+05:30"
+        elif source == "Accounting example":
+            dataset = load_accounting_demo()
+            st.caption(dataset["description"])
         else:
             symbol = st.text_input("Instrument label", value="MY_NSE_STOCK").strip().upper()
             uploaded = st.file_uploader("Historical OHLCV CSV", type=["csv"])
@@ -173,6 +195,16 @@ def select_dataset() -> dict | None:
                 if st.checkbox("I confirm these are completed daily bars")
                 else "unconfirmed",
                 "description": f"User-supplied historical file: {uploaded.name}",
+                "price_basis": {
+                    "Unverified": "unverified",
+                    "Raw / unadjusted": "raw",
+                    "Already adjusted": "adjusted",
+                }[
+                    st.selectbox(
+                        "Price basis", ["Unverified", "Raw / unadjusted", "Already adjusted"]
+                    )
+                ],
+                "corporate_actions": [],
             }
             if len(candles[-1]["timestamp"]) == 10:
                 close_time = st.time_input("Daily decision time (India time)", value=time(15, 30))
@@ -194,6 +226,22 @@ def select_dataset() -> dict | None:
                 except (ValueError, TypeError, KeyError, UnicodeError) as exc:
                     st.error(f"Evidence attachment rejected: {exc}")
                     return None
+            actions_file = st.file_uploader(
+                "Optional corporate actions JSON", type=["json"], key="actions_attachment"
+            )
+            if actions_file is not None:
+                try:
+                    if dataset["corporate_actions"]:
+                        raise ValueError(
+                            "Provide actions in one attachment only; do not apply them twice."
+                        )
+                    dataset["corporate_actions"] = load_actions(actions_file.getvalue())
+                except (ValueError, KeyError, TypeError, UnicodeError) as exc:
+                    st.error(f"Corporate action file rejected: {exc}")
+                    return None
+            st.caption(
+                "Action files require raw prices, source, announcement/ex-dates and dividend pay dates. Adjusted data must not also receive actions."
+            )
         fingerprint = hashlib.sha256(
             json.dumps(
                 {
@@ -204,6 +252,8 @@ def select_dataset() -> dict | None:
                     "fundamentals": dataset.get("fundamentals"),
                     "bar_interval": dataset.get("bar_interval"),
                     "decision_time": dataset.get("decision_time"),
+                    "price_basis": dataset.get("price_basis"),
+                    "corporate_actions": dataset.get("corporate_actions"),
                 },
                 sort_keys=True,
                 default=str,
@@ -243,8 +293,9 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
             width="stretch",
             help="Build a research brief below to assemble dated facts.",
         )
+    data_readiness(dataset)
     if st.button("Assess selected stock", type="primary", icon=":material/analytics:"):
-        analysis = engine_request("analyze", candles)
+        analysis = engine_request("analyze", candles, **market_options(dataset))
         if analysis:
             record_analysis(dataset, analysis)
             st.rerun()
@@ -281,6 +332,7 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
             for label, target, icon in [
                 ("Explore market analysis", "Market analysis", "candlestick_chart"),
                 ("Compare strategies", "Backtesting", "query_stats"),
+                ("Challenge strategy robustness", "Validation", "fact_check"),
                 ("Explore risk scenarios", "Monte Carlo", "ssid_chart"),
                 ("Ask the assistant", "Assistant", "forum"),
             ]:
@@ -341,7 +393,7 @@ def research_brief(dataset: dict, provider: str, model: str | None) -> None:
     st.markdown("### Research brief")
     st.caption("Build an evidence card, then review a source-grounded analyst report.")
     if st.button("Build evidence card", type="primary", width="content"):
-        analysis = engine_request("analyze", candles)
+        analysis = engine_request("analyze", candles, **market_options(dataset))
         if analysis is not None:
             try:
                 record_analysis(dataset, analysis)
@@ -433,7 +485,7 @@ def price_structure(dataset: dict) -> None:
     )
     analysis = st.session_state.get("analysis")
     if not analysis and st.button("Calculate price structure", type="primary"):
-        analysis = engine_request("analyze", dataset["candles"])
+        analysis = engine_request("analyze", dataset["candles"], **market_options(dataset))
         if analysis:
             record_analysis(dataset, analysis)
     overlay = st.multiselect(
@@ -495,7 +547,14 @@ def backtest_lab(dataset: dict) -> None:
     )
     if not daily_experiment_ready(dataset):
         return
-    with st.form("backtest_form"):
+    data_readiness(dataset)
+    model = cost_model_selector("backtest_cost_model")
+    with (
+        st.expander(
+            "Strategy & execution settings", expanded=not bool(st.session_state.get("backtests"))
+        ),
+        st.form("backtest_form"),
+    ):
         selection = st.multiselect(
             "Strategies to compare", list(STRATEGIES), default=list(STRATEGIES)
         )
@@ -511,34 +570,34 @@ def backtest_lab(dataset: dict) -> None:
         volume = c.number_input(
             "Breakout relative-volume threshold", min_value=0.1, max_value=10.0, value=1.2, step=0.1
         )
-        a, b, c = st.columns(3)
-        commission = a.number_input(
-            "Commission / charges per side (bps)", min_value=0.0, max_value=500.0, value=10.0
-        )
+        costs = cost_controls(model, "backtest")
+        b, c = st.columns(2)
         slippage = b.number_input(
             "Slippage per side (bps)", min_value=0.0, max_value=500.0, value=5.0
         )
         stop = c.number_input("Stop-loss distance (%)", min_value=1.0, max_value=99.0, value=8.0)
         exposure = st.slider("Capital exposure cap at entry (%)", 10, 100, 100, step=5)
         st.caption(
-            "Cost inputs are simplified research assumptions, not an Indian broker's tax or fee schedule. "
-            "A stop price is not a guaranteed execution price."
+            "A stop price is not a guaranteed execution price. Submitted costs and action inputs are retained in the export."
         )
         run = st.form_submit_button(
             "Run strategy comparison", type="primary", disabled=not selection
         )
     if run:
+        st.session_state.pop("backtests", None)
+        st.session_state.pop("experiment_settings", None)
         options = dict(
             initial_capital=capital,
             lookback=int(lookback),
             volume_threshold=volume,
-            commission_bps=commission,
+            **costs,
             slippage_bps=slippage,
             stop_loss_pct=stop / 100,
             max_exposure=exposure / 100,
             evaluation_start=int(len(dataset["candles"]) * 0.7)
             if evaluation.startswith("Last")
             else 0,
+            **market_options(dataset),
         )
         if len(dataset["candles"]) - options["evaluation_start"] < 2:
             st.warning(
@@ -555,6 +614,7 @@ def backtest_lab(dataset: dict) -> None:
         if len(results) == len(selection):
             st.session_state.backtests = results
             st.session_state.experiment_settings = options
+            st.rerun()
     results = st.session_state.get("backtests")
     if not results:
         st.info(
@@ -591,25 +651,42 @@ def backtest_lab(dataset: dict) -> None:
                 "Fees paid": number(metric.get("fees_paid")),
             }
         )
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-    replay = st.toggle("Animated backtest replay", value=True)
-    st.caption(
-        "Play / Pause and the scrubber replay a completed run. Up to 300 curve points are displayed in replay; metrics use every bar. No new calculation or live feed is started."
+    performance, replay_tab, trades_tab = st.tabs(
+        ["Performance", "Equity replay", "Trades & accounting"]
     )
-    equity, drawdown = equity_charts(results, replay=replay)
-    st.plotly_chart(equity, width="stretch")
-    st.plotly_chart(drawdown, width="stretch")
-    selected = st.selectbox("Inspect strategy trades", list(results))
-    st.caption("Evaluation: " + str(results[selected].get("evaluation", {})))
-    st.plotly_chart(trade_chart(dataset["candles"], results[selected]), width="stretch")
-    trades = results[selected].get("trades", [])
-    if trades:
-        st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch")
-    else:
-        st.caption("No executed trades for this run.")
-    with st.expander("Execution assumptions and exact configuration"):
-        st.json(st.session_state.get("experiment_settings", {}), expanded=False)
-        show_items(results[selected].get("assumptions"))
+    with performance:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.caption("Net returns include submitted charges. Open positions remain marked to market.")
+        st.button(
+            "Challenge these rules in Validation",
+            icon=":material/fact_check:",
+            on_click=go_page,
+            args=("Validation",),
+        )
+    with replay_tab:
+        replay = st.toggle("Animated backtest replay", value=True)
+        st.caption(
+            "Play / Pause replays a completed run, with up to 300 displayed curve points. Metrics use every bar."
+        )
+        equity, drawdown = equity_charts(results, replay=replay)
+        st.plotly_chart(equity, width="stretch")
+        st.plotly_chart(drawdown, width="stretch")
+    with trades_tab:
+        selected = st.selectbox("Inspect strategy trades", list(results))
+        evaluation = results[selected].get("evaluation", {})
+        st.caption(
+            f"{evaluation.get('start')} → {evaluation.get('end')} · {evaluation.get('bars')} evaluation bars"
+        )
+        accounting_view(results[selected])
+        st.plotly_chart(trade_chart(dataset["candles"], results[selected]), width="stretch")
+        trades = results[selected].get("trades", [])
+        if trades:
+            st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch")
+        else:
+            st.caption("No executed trades for this run.")
+        with st.expander("Execution assumptions and exact configuration"):
+            st.json(st.session_state.get("experiment_settings", {}), expanded=False)
+            show_items(results[selected].get("assumptions"))
     export = {
         "symbol": dataset["symbol"],
         "is_synthetic": dataset["is_synthetic"],
@@ -637,7 +714,10 @@ def monte_carlo_lab(dataset: dict) -> None:
     )
     if not daily_experiment_ready(dataset):
         return
-    with st.form("simulation_form"):
+    with (
+        st.expander("Scenario settings", expanded=not bool(st.session_state.get("simulation"))),
+        st.form("simulation_form"),
+    ):
         a, b, c = st.columns(3)
         method_label = a.selectbox(
             "Simulation model", ["Historical block bootstrap", "Geometric Brownian motion"]
@@ -678,9 +758,11 @@ def monte_carlo_lab(dataset: dict) -> None:
             annual_drift_shift=drift / 100,
             initial_shock_pct=shock / 100,
             execution_spread_bps=spread,
+            **market_options(dataset),
         )
         if result is not None:
             st.session_state.simulation = result
+            st.rerun()
     result = st.session_state.get("simulation")
     if not result:
         st.caption("No simulation has been run for the current dataset.")
@@ -1032,6 +1114,7 @@ PAGES = {
     "Market analysis": "Inspect price structure and volume, then add supporting indicators.",
     "Stock ideas": "Compare explainable bullish and bearish research cases from available histories.",
     "Backtesting": "Compare strategies under the same execution assumptions.",
+    "Validation": "Challenge fixed rules across chronological periods and higher costs.",
     "Monte Carlo": "Explore a range of conditional outcomes.",
     "Assistant": "Discuss the evidence and understand your results.",
     "Saved research": "Your saved evidence cards, analyst reports and research watchlist.",
@@ -1097,6 +1180,8 @@ def main() -> None:
         backtest_lab(dataset)
     elif page == "Monte Carlo":
         monte_carlo_lab(dataset)
+    elif page == "Validation":
+        validation_lab(dataset)
     elif page == "Assistant":
         chatbot(dataset, provider, model)
     elif page == "Monitoring":
