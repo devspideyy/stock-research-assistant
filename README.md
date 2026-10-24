@@ -2,7 +2,7 @@
 
 A final-year C++ and Python research workstation for Indian cash equities. The numerical core is C++17; the dashboard, evidence reports, chatbot and monitoring worker are Python. Indicators support price/volume and event research. US equities and derivatives are not implemented.
 
-**Development version.** Built-in prices, company information, headlines and depth are fictional synthetic fixtures. Results from them demonstrate software behavior, not investment performance. Real-data use requires your own permitted dataset or configured provider.
+**Historical research edition.** The main workspace uses a locally cached real-stock library with a hard cutoff of **31 December 2020**. Histories use documented provider-adjusted research units. Synthetic fixtures are reserved for tests. News/live feeds remain optional later integrations; software checks do not establish investment performance.
 
 ## Start on Windows
 
@@ -12,6 +12,7 @@ Use Python 3.12 and a C++17 compiler. VS Code alone does not include a compiler.
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe scripts/build_engine.py
+.\.venv\Scripts\python.exe scripts/prepare_history.py --reference-universe
 .\.venv\Scripts\python.exe scripts/run_dashboard.py
 ```
 
@@ -29,7 +30,8 @@ ctest --test-dir engine/build --output-on-failure -C Release
 
 ## What this version covers
 
-- Five fictional watchlist scenarios and validated chronological OHLCV CSV import.
+- A real historical library, explicit source/coverage records, stock-wise date windows and validated CSV import through 2020.
+- A heritage-style stock workspace with ivory surfaces, forest-green navigation, brass accents and editorial headings.
 - C++ prior price levels, relative volume and supporting SMA/EMA/RSI/ATR.
 - A parameterized TA-Lib lab exposing all 158 installed functions, with multi-output charts and exports.
 - Locally saved indicator presets, evidence/report history and a research watchlist.
@@ -41,6 +43,7 @@ ctest --test-dir engine/build --output-on-failure -C Release
 - Editable, dated NSE delivery-cost estimates alongside hypothetical bps, with per-fill charge breakdowns.
 - Chronological multi-fold Validation with a buy-and-hold benchmark, doubled-cost/slippage stress, local study history and JSON exports.
 - C++ circular-block bootstrap and GBM wealth scenarios, seeded runs, loss/tail summaries and sensitivity settings.
+- Monte Carlo linked to a submitted backtest: resamples net daily strategy returns, including cash days and existing fees, with drawdown-threshold risk.
 - Play/Pause/checkpoint replay for backtests and simulations, plus a terminal simulation histogram.
 - Level 2/3 and order-flow research are deferred; the old depth snapshot lab is no longer shown.
 - Deterministic research reports/educational answers plus optional OpenRouter and Ollama providers.
@@ -52,14 +55,19 @@ Start with [docs/FREE_DATA_SETUP.md](docs/FREE_DATA_SETUP.md) for the two option
 
 ## Dashboard workflow
 
-The sidebar groups navigation into **Research**, **Experiments** and **Workspace**.
-**Research data** contains the demo/CSV selector. The main **Workspace** selector
-also supports navigation when the sidebar is collapsed on a narrow screen.
-Overview combines chart ranges, metrics, research shortcuts and recent reports.
-Market analysis separates price/volume, indicators and source records into tabs.
-Saved research provides evidence/report exports and watchlist management.
-All demo calculations work offline without keys. See [the UI guide](docs/UI_GUIDE.md)
+Start in **Stock workspace**. Choose a cached real stock and research window in
+**Research data**, then move between chart/indicators, strategies/backtest,
+validation, stock scenarios and evidence. The backtest includes a **Monte Carlo risk**
+tab. A separate stock scenario remains available for comparison.
+Individual research labs are grouped in a sidebar expander. Saved research retains
+evidence/report exports and watchlist management. After preparation, research runs
+offline without credentials. See [the UI guide](docs/UI_GUIDE.md)
 for presets and the difference between research bookmarks and the worker watchlist.
+
+The initial local cohort contains **46 prepared stocks**, with source records reaching
+back to 1996 where available, and a catalogue of 2,577 candidate history files for
+explicit on-demand import. Four cohort entries were withheld; this is not a complete
+point-in-time NSE universe. See [sources, coverage and validation](docs/HISTORICAL_RESEARCH.md).
 
 Use **Assess selected stock** for the current instrument or **Stock ideas** to compare
 available histories. See [recommendation rules and the next research steps](docs/RESEARCH_RECOMMENDATIONS.md)
@@ -107,9 +115,12 @@ Optionally attach a JSON file containing separately sourced `news`, `fundamental
 
 Declare the **Price basis**. Raw prices can receive sourced split/bonus/cash-dividend events using the optional action JSON upload. Already-adjusted history must not also receive those events. Events are supplied by you; missing actions are not discovered automatically. Fractional entitlements, rights and mergers are unsupported. Adjusted OHLC remains a research convention rather than actual historical exchange fills. See [accounting and validation](docs/ACCOUNTING_AND_VALIDATION.md) for the format, fee coverage and assumptions.
 
-Choose **Accounting example** in Research data to inspect a fictional 2-for-1 split and cash dividend. In Backtesting, use Full history to include both events; open **Trades & accounting**, then choose Buy and hold. In **Validation**, run a study to compare separate periods and cost sensitivity. No key is needed.
+Corporate-action conservation examples remain in the automated tests and examples
+folder. Normal startup offers Historical library and CSV import. In **Validation**,
+run a study to compare separate periods and cost sensitivity. No key is needed.
 
-Export a clearly synthetic example if you want to test the importer:
+Synthetic exports are available for development boundary checks; their dates are
+outside the normal pre-2021 workspace and they are not the user research dataset:
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.demo --export data/private/synthetic_example.csv

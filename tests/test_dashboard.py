@@ -18,6 +18,49 @@ def navigate(app, page):
     assert not app.exception
 
 
+def test_production_workspace_uses_real_history_and_links_strategy_risk(tmp_path, monkeypatch):
+    import pandas as pd
+    from app import history
+
+    monkeypatch.delenv("STOCK_RESEARCH_TEST_FIXTURES")
+    monkeypatch.setenv("STOCK_RESEARCH_DB", str(tmp_path / "production.sqlite"))
+    index = pd.bdate_range("2020-01-01", "2020-12-31")
+    frame = pd.DataFrame(
+        {
+            "Open": [100 + i * 0.1 for i in range(len(index))],
+            "High": [101 + i * 0.1 for i in range(len(index))],
+            "Low": [99 + i * 0.1 for i in range(len(index))],
+            "Close": [100 + i * 0.1 for i in range(len(index))],
+            "Adj Close": [100 + i * 0.1 for i in range(len(index))],
+            "Volume": 1000,
+        },
+        index=index,
+    )
+    bundle = history.prepare_frame(frame, "TEST")
+    history.write_json(history.library_path() / "TEST.json", bundle)
+    app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
+    assert not app.exception
+    assert app.session_state["workspace_page"] == "Stock workspace"
+    assert next(item for item in app.radio if item.label == "Data source").options == [
+        "Historical library",
+        "Upload historical CSV",
+    ]
+    next(item for item in app.get("button_group") if item.label == "Research section").set_value(
+        "Strategies & backtest"
+    ).run()
+    assert not app.exception
+    assert next(item for item in app.selectbox if item.label == "Cost model").options == [
+        "Hypothetical bps"
+    ]
+    button(app, "Run strategy comparison").click().run()
+    button(app, "Simulate strategy risk").click().run()
+    assert not app.exception
+    risk = app.session_state["strategy_simulation"]
+    assert risk["symbol"] == "TEST" and risk["is_synthetic"] is False
+    assert risk["strategy_calibration"]["evaluation"]["end"] == "2020-12-31"
+    assert risk["linked_backtest"] == app.session_state["backtests"]["Buy and hold"]["_provenance"]
+
+
 def test_accounting_and_validation_offline_flow(tmp_path, monkeypatch):
     from app import storage
 

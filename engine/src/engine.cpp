@@ -407,7 +407,7 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
             "Sharpe uses zero risk-free rate; annualized volatility and Sharpe assume DAILY bars and 252 sessions/year.",
             "Declared raw-price splits/bonuses adjust shares and basis on ex-date; credit latency is not modelled. Fractional entitlements, rights and mergers are rejected.",
             "Gross dividends accrue to prior holders at ex-date; receivables count in equity but only become spending cash on/after supplied pay_date. Withholding/income tax is excluded.",
-            "Signals use causal forward-normalised price/share units; current-date outputs use current raw units. Unknown actions remain a source-quality risk; adjusted input must not also receive events.",
+            "Declared-event signals use causal forward-normalised units; displayed levels use supplied per-bar price units. Adjusted inputs represent research units, not original raw fills, and must not also receive events.",
             "Single-stock strategy test: no claims of portfolio diversification or survivorship-bias control."}}};
 }
 
@@ -423,6 +423,9 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
     const auto adjusted = signal_candles(candles, action_plan);
     const std::string method = options.value("method", std::string("bootstrap"));
     require(method == "bootstrap" || method == "gbm", "Simulation method must be bootstrap or gbm");
+    const std::string basis = options.value("basis", std::string("stock"));
+    require(basis == "stock" || basis == "strategy", "Simulation basis must be stock or strategy");
+    require(basis != "strategy" || method == "bootstrap", "Strategy risk uses block bootstrap, not fitted stock GBM");
     const int paths = integer_option(options, "paths", 1000, 10, 20000);
     const int horizon = integer_option(options, "horizon", 60, 1, 2520);
     require(static_cast<std::int64_t>(paths) * (horizon + 1) <= 5000000, "Simulation exceeds five million path steps");
@@ -432,9 +435,23 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
     const double volatility_multiplier = option(options, "volatility_multiplier", 1, 0, 5);
     const double annual_drift_shift = option(options, "annual_drift_shift", 0, -2, 2);
     const double initial_shock = option(options, "initial_shock_pct", 0, -.95, 1);
+    const double drawdown_threshold = option(options, "drawdown_threshold", .2, 0, 1);
     const double execution_spread_bps = option(options, "execution_spread_bps", 0, 0, 1000);
+    require(basis != "strategy" || execution_spread_bps == 0,
+            "Strategy returns already include execution costs; do not charge the entry spread twice");
     std::vector<double> log_returns;
-    for (std::size_t i = 1; i < candles.size(); ++i) log_returns.push_back(std::log(adjusted[i].close / adjusted[i - 1].close));
+    json strategy_calibration = nullptr;
+    if (basis == "strategy") {
+        const auto run = backtest(candles, options);
+        const auto& curve = run.at("equity");
+        require(curve.size() >= 21, "Strategy risk requires at least 20 evaluated daily returns");
+        for (std::size_t i = 1; i < curve.size(); ++i)
+            log_returns.push_back(std::log(curve[i].at("equity").get<double>() / curve[i - 1].at("equity").get<double>()));
+        strategy_calibration = {{"strategy", run.at("strategy")}, {"evaluation", run.at("evaluation")}, {"metrics", run.at("metrics")}};
+    } else {
+        for (std::size_t i = 1; i < candles.size(); ++i)
+            log_returns.push_back(std::log(adjusted[i].close / adjusted[i - 1].close));
+    }
     const double mean = std::accumulate(log_returns.begin(), log_returns.end(), 0.0) / log_returns.size();
     double squared = 0;
     for (double r : log_returns) squared += (r - mean) * (r - mean);
@@ -446,7 +463,7 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
     for (auto& step : step_values) step.reserve(paths);
     std::vector<double> terminal, drawdowns;
     json samples = json::array();
-    int loss_count = 0;
+    int loss_count = 0, drawdown_count = 0;
     for (int path = 0; path < paths; ++path) {
         // A one-off entry spread and shock affect step 1, preserving step 0 = capital.
         double log_wealth = std::log(capital), peak = capital, path_drawdown = 0;
@@ -479,6 +496,7 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
         const double last = step_values[horizon].back();
         terminal.push_back(last);
         drawdowns.push_back(path_drawdown);
+        if (path_drawdown >= drawdown_threshold) ++drawdown_count;
         if (last < capital - 1e-8) ++loss_count;
         if (path < 30) samples.push_back(sample);
     }
@@ -509,8 +527,10 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
         for (int i = 0; i < 20; ++i) histogram.push_back({{"low", minimum + i * width},
             {"high", minimum + (i + 1) * width}, {"count", bins[i]}});
     }
-    return {{"method", method}, {"seed", seed}, {"summary", {{"p05", p05}, {"p50", p50}, {"p95", p95},
+    return {{"method", method}, {"basis", basis}, {"strategy_calibration", strategy_calibration},
+            {"seed", seed}, {"summary", {{"p05", p05}, {"p50", p50}, {"p95", p95},
             {"probability_loss", static_cast<double>(loss_count) / paths}, {"var95", std::max(0.0, capital - p05)},
+            {"probability_drawdown", static_cast<double>(drawdown_count) / paths},
             {"expected_shortfall95", std::max(0.0, capital - tail_mean)},
             {"max_drawdown_p50", quantile(drawdowns, .5)}, {"max_drawdown_p95", quantile(drawdowns, .95)}}},
             {"percentiles", percentiles}, {"sample_paths", samples}, {"terminal_histogram", histogram},
@@ -518,6 +538,8 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
             {"volatility_multiplier", volatility_multiplier}, {"annual_drift_shift", annual_drift_shift},
             {"initial_shock_pct", initial_shock}, {"execution_spread_bps", execution_spread_bps}}},
             {"assumptions", {"Conditional scenarios, not price predictions or confidence intervals for true future prices.",
+            "Strategy basis resamples net backtest daily returns, including cash days and existing costs; it does not rerun signals/fills on invented OHLC paths.",
+            "Stock basis resamples event-normalised stock returns and is separate from active-strategy risk. Bootstrap uncertainty remains conditional on the observed history.",
             "Daily closes and 252 sessions/year are assumed. Input history must be adjusted consistently for corporate actions.",
             "Bootstrap samples circular contiguous blocks of log returns; blocks may wrap across history ends.",
             "GBM fits daily log mean and sample log volatility; arithmetic drift = log mean + 0.5 * variance.",
@@ -581,7 +603,9 @@ json execute(const json& request) {
     result["supported_features"] = {"OHLCV context", "cash long-only next-open backtests", "conditional Monte Carlo", "displayed depth snapshots"};
     result["accounting"] = {{"price_basis", options.value("price_basis", std::string("unverified"))},
                              {"declared_actions", options.value("corporate_actions", json::array()).size()},
-                             {"signal_units", "causal forward-normalised; displayed levels in current raw units"}};
+                             {"signal_units", options.value("price_basis", std::string("unverified")) == "adjusted" ?
+                                "supplied adjusted research units; events not applied twice" :
+                                "causal forward-normalised; displayed levels in supplied per-bar units"}};
     result["limitations"] = {{"corporate_actions_processed", options.contains("corporate_actions") && !options["corporate_actions"].empty()}, {"executed_order_flow_inferred", false},
                              {"live_execution_supported", false}, {"daily_bar_annualization", true}};
     return result;

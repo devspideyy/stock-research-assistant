@@ -46,7 +46,7 @@ def add_replay(figure: go.Figure, *, label: str) -> go.Figure:
             yref="paper",
             xanchor="right",
             showarrow=False,
-            font=dict(color="#A9BBD1", size=10),
+            font=dict(color="#506257", size=10),
         )
 
     result.frames = [
@@ -94,9 +94,9 @@ def add_replay(figure: go.Figure, *, label: str) -> go.Figure:
                 xanchor="left",
                 yanchor="top",
                 showactive=False,
-                bgcolor="#192433",
-                bordercolor="#33435A",
-                font=dict(color="#E5EDF7"),
+                bgcolor="#EEEAE0",
+                bordercolor="#D9D2C3",
+                font=dict(color="#253C32"),
                 buttons=[
                     dict(
                         label="▶ Play",
@@ -121,9 +121,9 @@ def add_replay(figure: go.Figure, *, label: str) -> go.Figure:
                 x=0.28,
                 len=0.72,
                 y=-0.14,
-                bgcolor="#33435A",
-                activebgcolor="#62D9BB",
-                font=dict(color="#A9BBD1", size=9),
+                bgcolor="#D9D2C3",
+                activebgcolor="#B59254",
+                font=dict(color="#506257", size=9),
                 currentvalue=dict(prefix="Scrub checkpoint: "),
                 steps=[
                     dict(

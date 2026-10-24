@@ -1,5 +1,10 @@
 # Offline development progress — 24 October 2026
 
+The subsequent real-history and heritage-workspace release is documented in
+[Historical research](HISTORICAL_RESEARCH.md), which supersedes the earlier demo-first
+workflow described below. It adds 46 prepared real stocks and Monte Carlo linked
+to net strategy backtests, without broker credentials.
+
 The C++17/Python workstation now supports explainable price/volume research,
 bullish/bearish evidence scores, five strategy hypotheses, animated backtest and
 Monte Carlo replay, an educational assistant and local research history. The new

@@ -2,11 +2,12 @@
 
 from datetime import time
 import hashlib
+import os
 
 import pandas as pd
 import streamlit as st
 
-from app import storage
+from app import history, storage
 from app.assessment import STRATEGIES, STRATEGY_GUIDE
 from app.accounting import market_options
 from app.demo import SYMBOLS, load_demo
@@ -48,12 +49,26 @@ def stock_ideas(dataset: dict | None) -> None:
         "Idea source",
         [
             "Current research dataset",
-            "Five fictional demo scenarios",
+            "Historical library",
+            *(
+                ["Five fictional demo scenarios"]
+                if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") == "1"
+                else []
+            ),
             "Multiple historical CSV files",
         ],
         horizontal=True,
     )
     uploaded, synthetic, completed, close_time = [], False, False, time(15, 30)
+    library_symbols = []
+    if source == "Historical library":
+        ready = history.ready_stocks()
+        library_symbols = st.multiselect(
+            "Historical stocks to compare", ready, default=ready[:10], max_selections=20
+        )
+        st.caption(
+            "Cached real histories only · up to 20 per scan · selected research-window dates apply. This is not a complete historical NSE universe."
+        )
     if source == "Multiple historical CSV files":
         uploaded = st.file_uploader(
             "Stock histories (up to 10 CSV files)", type=["csv"], accept_multiple_files=True
@@ -77,6 +92,8 @@ def stock_ideas(dataset: dict | None) -> None:
         synthetic,
         completed,
         str(close_time),
+        tuple(library_symbols),
+        st.session_state.get("dataset_fingerprint") if source == "Historical library" else None,
     )
     if st.session_state.get("idea_input") != fingerprint:
         st.session_state.pop("idea_cards", None)
@@ -86,11 +103,29 @@ def stock_ideas(dataset: dict | None) -> None:
             if source == "Current research dataset":
                 if dataset is None:
                     raise ValueError(
-                        "Select a demo or upload a historical dataset in the sidebar first."
+                        "Select a historical stock or upload a historical dataset in the sidebar first."
                     )
                 datasets = [dataset]
             elif source == "Five fictional demo scenarios":
                 datasets = [load_demo(symbol) | {"bar_interval": "1d"} for symbol in SYMBOLS]
+            elif source == "Historical library":
+                if not library_symbols:
+                    raise ValueError("Choose at least one cached historical stock.")
+                datasets = [history.load_stock(symbol) for symbol in library_symbols]
+                if dataset:
+                    start, end = (
+                        dataset["candles"][0]["timestamp"],
+                        dataset["candles"][-1]["timestamp"],
+                    )
+                    for item in datasets:
+                        item["candles"] = [
+                            c for c in item["candles"] if start <= c["timestamp"] <= end
+                        ]
+                        if len(item["candles"]) < 30:
+                            raise ValueError(
+                                f"{item['symbol']} has fewer than 30 bars in the selected window."
+                            )
+                        item["decision_time"] = item["candles"][-1]["timestamp"] + "T15:30:00+05:30"
             else:
                 if not uploaded or len(uploaded) > 10 or not completed:
                     raise ValueError("Provide 1–10 CSV files and confirm completed daily bars.")
@@ -104,6 +139,13 @@ def stock_ideas(dataset: dict | None) -> None:
                     for file in uploaded
                 ]
             cards = []
+            if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") != "1":
+                for item in datasets:
+                    item["candles"] = [
+                        c for c in item["candles"] if c["timestamp"][:10] <= history.CUTOFF
+                    ]
+                    if len(item["candles"]) < 30:
+                        raise ValueError(f"{item['symbol']} needs at least 30 bars through 2020.")
             with st.spinner("Calculating native price structure and evidence cases…"):
                 for item in datasets:
                     candles = validate_daily_candles(

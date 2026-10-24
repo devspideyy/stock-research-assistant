@@ -13,9 +13,11 @@ An event needs a valid announcement date earlier than its ex-date. The ex-date m
 match exactly one supplied daily bar with a prior observation. At most one share
 event and one cash dividend per ex-date are supported.
 
-Upload [the fictional action example](../examples/corporate_actions.json) beside its
-[matching raw prices](../examples/accounting_fixture.csv), or select Accounting example
-in the app. Never attach these fictional events to a real security.
+The [fictional action example](../examples/corporate_actions.json) and its
+[matching raw prices](../examples/accounting_fixture.csv) are for native/automated
+accounting checks. The historical research UI now caps normal data at 2020 and
+reserves synthetic fixture controls for tests. Never attach fictional events to
+a real security. See [the current historical workflow](HISTORICAL_RESEARCH.md).
 
 | Field | Meaning |
 | --- | --- |

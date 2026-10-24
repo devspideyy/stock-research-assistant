@@ -9,7 +9,7 @@ Every expensive engine or model operation requires an explicit user action.
 from __future__ import annotations
 
 import hashlib
-from datetime import time
+from datetime import date, time
 import json
 import os
 from pathlib import Path
@@ -25,7 +25,7 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 import streamlit as st
 
-from app import storage
+from app import history, storage
 from app.attachments import load_evidence_json
 from app.accounting import load_actions, market_options
 from app.assessment import STRATEGIES
@@ -45,6 +45,8 @@ from app.engine_bridge import (
     validate_daily_candles,
 )
 from app.monitor import run_once
+from app.stock_workspace import stock_workspace
+from app.strategy_risk import strategy_risk
 from app.recommendations import stock_ideas, strategy_guide
 from app.research_labs import indicator_lab, stock_catalogue
 from app.services import build_evidence, generate_report
@@ -92,6 +94,7 @@ RESULT_KEYS = (
     "indicator_settings",
     "idea_cards",
     "validation_study",
+    "strategy_simulation",
 )
 
 
@@ -153,10 +156,84 @@ def select_dataset() -> dict | None:
     with st.sidebar.expander("Research data", expanded=True):
         source = st.radio(
             "Data source",
-            ["Synthetic demo", "Accounting example", "Upload historical CSV"],
+            (
+                ["Synthetic demo", "Accounting example"]
+                if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") == "1"
+                else []
+            )
+            + ["Historical library", "Upload historical CSV"],
             key="data_source",
         )
-        if source == "Synthetic demo":
+        if source == "Historical library":
+            ready = history.ready_stocks()
+            if not ready:
+                st.info(
+                    "Prepare the real history library once using scripts/prepare_history.py. No broker key is needed."
+                )
+            else:
+                imported = st.session_state.pop("new_history_stock", None)
+                if imported in ready:
+                    st.session_state.historical_stock = imported
+                symbol = st.selectbox(
+                    "Historical stock",
+                    ready,
+                    index=ready.index("INFY") if "INFY" in ready else 0,
+                    key="historical_stock",
+                )
+                try:
+                    dataset = history.load_stock(symbol)
+                except (OSError, ValueError, KeyError) as exc:
+                    st.error(str(exc))
+                    return None
+                bounds = (
+                    date.fromisoformat(dataset["candles"][0]["timestamp"]),
+                    date.fromisoformat(dataset["candles"][-1]["timestamp"]),
+                )
+                period = st.date_input(
+                    "Research window",
+                    value=bounds,
+                    min_value=bounds[0],
+                    max_value=bounds[1],
+                    key="period_" + symbol,
+                )
+                if len(period) != 2:
+                    st.info("Choose both dates to open the research window.")
+                    return None
+                dataset["candles"] = [
+                    c
+                    for c in dataset["candles"]
+                    if period[0].isoformat() <= c["timestamp"] <= period[1].isoformat()
+                ]
+                if len(dataset["candles"]) < 30:
+                    st.info("Choose at least 30 daily observations.")
+                    return None
+                dataset["decision_time"] = dataset["candles"][-1]["timestamp"] + "T15:30:00+05:30"
+                st.caption("Real daily history · hard cutoff 31 Dec 2020 · no live prices")
+            with st.expander("Add another historical stock"):
+                listing = history.catalogue()
+                st.caption(
+                    f"{len(ready)} stocks ready locally · {len(listing['stocks'])} source files discoverable. Pre-2021 coverage is checked when imported."
+                )
+                query = (
+                    st.text_input("Find historical NSE symbol", placeholder="e.g. ASIANPAINT")
+                    .strip()
+                    .upper()
+                )
+                matches = [
+                    s["symbol"] for s in listing["stocks"] if query and query in s["symbol"]
+                ][:100]
+                selected = st.selectbox("Matching historical symbol", matches) if matches else None
+                if st.button("Download selected history", disabled=selected is None):
+                    try:
+                        with st.spinner("Downloading and validating the historical file…"):
+                            history.fetch_stock(selected)
+                        st.session_state.new_history_stock = selected
+                        st.rerun()
+                    except (RuntimeError, ValueError, OSError) as exc:
+                        st.error(str(exc))
+            if not ready:
+                return None
+        elif source == "Synthetic demo":
             symbol = st.selectbox(
                 "Demonstration instrument",
                 SYMBOLS,
@@ -181,6 +258,17 @@ def select_dataset() -> dict | None:
                 return None
             try:
                 candles = load_candles_csv(uploaded.getvalue())
+                if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") != "1":
+                    excluded = sum(c["timestamp"][:10] > history.CUTOFF for c in candles)
+                    candles = [c for c in candles if c["timestamp"][:10] <= history.CUTOFF]
+                    if len(candles) < 30:
+                        raise ValueError(
+                            "The research edition requires at least 30 daily bars through 31 Dec 2020."
+                        )
+                    if excluded:
+                        st.caption(
+                            f"Excluded {excluded} rows after the 31 Dec 2020 research cutoff."
+                        )
             except (ValueError, RuntimeError, OSError) as exc:
                 st.error(f"CSV validation failed: {exc}")
                 return None
@@ -254,6 +342,7 @@ def select_dataset() -> dict | None:
                     "decision_time": dataset.get("decision_time"),
                     "price_basis": dataset.get("price_basis"),
                     "corporate_actions": dataset.get("corporate_actions"),
+                    "history_quality": dataset.get("history_quality"),
                 },
                 sort_keys=True,
                 default=str,
@@ -384,6 +473,8 @@ def record_analysis(dataset: dict, analysis: dict) -> None:
     )
     st.session_state.analysis = analysis
     st.session_state.evidence = evidence
+    if dataset.get("history_quality"):
+        evidence["history_source"] = dataset["history_quality"]
     st.session_state.pop("report", None)
     safe_storage(storage.save_evidence, evidence)
 
@@ -548,7 +639,7 @@ def backtest_lab(dataset: dict) -> None:
     if not daily_experiment_ready(dataset):
         return
     data_readiness(dataset)
-    model = cost_model_selector("backtest_cost_model")
+    model = cost_model_selector("backtest_cost_model", dataset)
     with (
         st.expander(
             "Strategy & execution settings", expanded=not bool(st.session_state.get("backtests"))
@@ -651,8 +742,8 @@ def backtest_lab(dataset: dict) -> None:
                 "Fees paid": number(metric.get("fees_paid")),
             }
         )
-    performance, replay_tab, trades_tab = st.tabs(
-        ["Performance", "Equity replay", "Trades & accounting"]
+    performance, replay_tab, risk_tab, trades_tab = st.tabs(
+        ["Performance", "Equity replay", "Monte Carlo risk", "Trades & accounting"]
     )
     with performance:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
@@ -687,6 +778,8 @@ def backtest_lab(dataset: dict) -> None:
         with st.expander("Execution assumptions and exact configuration"):
             st.json(st.session_state.get("experiment_settings", {}), expanded=False)
             show_items(results[selected].get("assumptions"))
+    with risk_tab:
+        strategy_risk(dataset, results, st.session_state.get("experiment_settings", {}))
     export = {
         "symbol": dataset["symbol"],
         "is_synthetic": dataset["is_synthetic"],
@@ -901,7 +994,8 @@ def monitoring() -> None:
     existing = safe_storage(storage.get_watchlist, default=[]) or []
     mode = st.radio(
         "Watchlist configuration",
-        ["Synthetic replay", "Upstox read-only snapshots"],
+        (["Synthetic replay"] if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") == "1" else [])
+        + ["Upstox read-only snapshots"],
         horizontal=True,
     )
     if mode == "Synthetic replay":
@@ -1097,7 +1191,7 @@ def settings(provider: str, model: str | None) -> None:
     st.markdown("#### What this version can substantiate")
     show_items(
         [
-            "A reproducible C++ research workflow on synthetic fixtures or user-supplied historical OHLCV.",
+            "A reproducible C++ research workflow on cached real histories or imported OHLCV through 2020.",
             "Numerical strategy comparisons with explicit cost and execution assumptions.",
             "Conditional simulations, evidence gaps and separately inspectable agent reports.",
             "Persistent event recording and a synthetic replay worker.",
@@ -1110,6 +1204,7 @@ def settings(provider: str, model: str | None) -> None:
 
 
 PAGES = {
+    "Stock workspace": "One stock, one window, connected research and risk analysis.",
     "Overview": "A clear view of your research, evidence and next decisions.",
     "Market analysis": "Inspect price structure and volume, then add supporting indicators.",
     "Stock ideas": "Compare explainable bullish and bearish research cases from available histories.",
@@ -1125,6 +1220,10 @@ PAGES = {
 
 
 def main() -> None:
+    st.session_state.setdefault(
+        "workspace_page",
+        "Overview" if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") == "1" else "Stock workspace",
+    )
     sidebar_navigation()
     dataset = select_dataset()
     if dataset is None:
@@ -1133,7 +1232,7 @@ def main() -> None:
                 st.session_state.pop(key, None)
     sidebar_workspace(dataset)
     provider, model = model_controls()
-    st.caption("EQUITY / INDIA CASH EQUITIES / RESEARCH EDITION")
+    st.caption("THE EQUITY LEDGER  /  INDIA CASH EQUITIES  /  RESEARCH EDITION")
     page = st.selectbox(
         "Workspace", list(PAGES), key="workspace_page", width=230, label_visibility="collapsed"
     )
@@ -1144,33 +1243,50 @@ def main() -> None:
         "Saved research",
         "Stock ideas",
     }
-    with st.container(
-        horizontal=True, vertical_alignment="center", horizontal_alignment="distribute"
-    ):
-        st.title(page, width="content")
-        if research_page and dataset:
-            st.badge(
-                "DEMO / NOT LIVE" if dataset["is_synthetic"] else "HISTORICAL CSV",
-                color="orange" if dataset["is_synthetic"] else "blue",
-            )
+    if page != "Stock workspace":
+        with st.container(
+            horizontal=True, vertical_alignment="center", horizontal_alignment="distribute"
+        ):
+            st.title(page, width="content")
+            if research_page and dataset:
+                st.badge(
+                    "DEMO / NOT LIVE" if dataset["is_synthetic"] else "HISTORICAL / NOT LIVE",
+                    color="orange" if dataset["is_synthetic"] else "gray",
+                )
     if research_page and dataset is None:
         st.info(
-            "Upload a historical CSV using Research data in the sidebar, or choose Synthetic demo. Saved research, stock search and settings remain accessible."
+            "Choose a prepared stock from Historical library, or upload a historical CSV in Research data. Saved research, stock search and settings remain accessible."
         )
         st.stop()
-    if research_page:
+    if research_page and page != "Stock workspace":
         st.caption(
             dataset["symbol"].replace("DEMO_", "").replace("_", " ").title()
             + " · "
             + (
                 f"Fictional data · Daily bars · As of {dataset['candles'][-1]['timestamp']}"
                 if dataset["is_synthetic"]
-                else "Historical CSV · Source quality unverified"
+                else f"Historical research · As of {dataset['candles'][-1]['timestamp']} · Source and adjustments in data context"
             )
         )
-    else:
+    elif not research_page:
         st.caption(PAGES[page])
-    if page == "Overview":
+    if page == "Stock workspace":
+        stock_workspace(
+            dataset,
+            {
+                "Overview": lambda: None,
+                "Chart & indicators": lambda: price_liquidity(dataset),
+                "Strategies & backtest": lambda: backtest_lab(dataset),
+                "Validation": lambda: validation_lab(dataset),
+                "Stock scenarios": lambda: monte_carlo_lab(dataset),
+                "Evidence & reports": lambda: research_brief(dataset, provider, model),
+                "Assistant": lambda: chatbot(dataset, provider, model),
+            },
+            on_assess=lambda: record_analysis(
+                dataset, EngineClient().analyze(dataset["candles"], **market_options(dataset))
+            ),
+        )
+    elif page == "Overview":
         overview(dataset, provider, model)
     elif page == "Market analysis":
         price_liquidity(dataset)

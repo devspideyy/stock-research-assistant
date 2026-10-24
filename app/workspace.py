@@ -157,21 +157,19 @@ def select_demo(symbol: str) -> None:
     st.session_state.demo_symbol = symbol
 
 
+def select_history(symbol: str) -> None:
+    st.session_state.data_source = "Historical library"
+    st.session_state.historical_stock = symbol
+
+
 def sidebar_navigation() -> None:
     st.sidebar.title("Equity")
-    st.sidebar.caption("RESEARCH TERMINAL / INDIA")
+    st.sidebar.caption("THE RESEARCH LEDGER")
     groups = {
         "RESEARCH": {
-            "Overview": "space_dashboard",
-            "Market analysis": "candlestick_chart",
+            "Stock workspace": "account_balance",
             "Stock ideas": "analytics",
-            "Assistant": "forum",
             "Saved research": "history",
-        },
-        "EXPERIMENTS": {
-            "Backtesting": "query_stats",
-            "Validation": "fact_check",
-            "Monte Carlo": "ssid_chart",
         },
         "WORKSPACE": {
             "Stock universe": "travel_explore",
@@ -193,6 +191,26 @@ def sidebar_navigation() -> None:
                 on_click=go_page,
                 args=(page,),
             )
+    labs = {
+        "Overview": "space_dashboard",
+        "Market analysis": "candlestick_chart",
+        "Backtesting": "query_stats",
+        "Validation": "fact_check",
+        "Monte Carlo": "ssid_chart",
+        "Assistant": "forum",
+    }
+    with st.sidebar.expander(
+        "Individual research labs", expanded=st.session_state.get("workspace_page") in labs
+    ):
+        for page, icon in labs.items():
+            st.button(
+                page,
+                key=f"nav_{page}",
+                icon=f":material/{icon}:",
+                width="stretch",
+                on_click=go_page,
+                args=(page,),
+            )
     st.sidebar.divider()
 
 
@@ -200,7 +218,13 @@ def sidebar_workspace(dataset: dict | None) -> None:
     if dataset and st.sidebar.button(
         "Save instrument to watchlist", icon=":material/bookmark_add:", width="stretch"
     ):
-        source = "Synthetic demo" if dataset["is_synthetic"] else "Historical CSV"
+        source = (
+            "Synthetic demo"
+            if dataset["is_synthetic"]
+            else "Historical library"
+            if dataset.get("history_quality")
+            else "Historical CSV"
+        )
         if safe_storage(save_watchlist_item, dataset["symbol"], source):
             st.toast("Instrument saved to your research watchlist.", icon=":material/bookmark:")
     entries = safe_storage(storage.get_setting, "research_watchlist", default=[]) or []
@@ -215,6 +239,15 @@ def sidebar_workspace(dataset: dict | None) -> None:
                     type="tertiary",
                     icon=":material/bookmark:",
                     on_click=select_demo,
+                    args=(item["symbol"],),
+                )
+            elif item["source"] == "Historical library":
+                st.button(
+                    item["symbol"],
+                    key=f"watch_{item['id']}",
+                    type="tertiary",
+                    icon=":material/bookmark:",
+                    on_click=select_history,
                     args=(item["symbol"],),
                 )
             else:

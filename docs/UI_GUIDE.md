@@ -2,20 +2,22 @@
 
 ## Find a tool
 
-The sidebar contains three groups:
+The sidebar contains two primary groups and an optional lab collection:
 
-- **Research:** Overview, Market analysis, Assistant and Saved research.
-- **Experiments:** Backtesting, Validation and Monte Carlo.
+- **Research:** Stock workspace, Stock ideas and Saved research.
 - **Workspace:** Stock universe, Monitoring and Settings.
+- **Individual research labs:** the standalone pages, retained in an expander.
 
 The active section is highlighted. On a narrow screen, expand the sidebar to
 change data and use the main Workspace selector to move between sections.
 
-Overview has chart display ranges, price/volume context, shortcuts and recent
-reports. A chart range changes the displayed bars only; experiment calibration
-still uses the supplied dataset and the lab's stated assumptions. Demo/import
-labels and the last supplied date stay visible. Nothing is labelled live simply
-because a chart is interactive.
+Stock workspace opens with a real historical stock, source dates, adjusted-unit
+metrics and a price/volume chart. The forest-green sidebar, ivory surfaces, brass
+accents and serif headings are native Streamlit theme settings. Research sections
+keep the same selected stock/window while moving between tools. A chart range changes
+displayed bars only; the Research window controls supplied calculation history.
+The earliest observations warm up features within that window. All imported/library
+research is capped at 31 December 2020; historical data is never labelled live.
 
 ## Save research
 
@@ -51,7 +53,7 @@ changes the worker's watchlist or submits an order.
 
 ## Code map
 
-The dark theme is in `.streamlit/config.toml`. Page composition remains in
+The heritage theme is in `.streamlit/config.toml`. Page composition remains in
 `app/dashboard.py`; `app/workspace.py` handles navigation, bookmarks and history.
 `app/research_labs.py` contains indicator/preset controls and stock search.
 `app/ui_helpers.py` holds shared charts and report rendering. The existing SQLite
@@ -76,7 +78,17 @@ retain it across sessions (most recent 10), or download its JSON. Saved studies
 retain their original instrument and synthetic/history label, independently of the
 currently selected research data. Original source prices are not stored in studies.
 
-Use Research data → Accounting example to test a fictional split and cash dividend.
+Fictional split/dividend examples remain in automated tests and the examples folder.
 The C++ analysis and experiments account for declared actions. The separate TA-Lib
 library and chart candles retain the supplied OHLCV; their raw discontinuities
 should not be interpreted as genuine price moves.
+
+## Connect Monte Carlo to a backtest
+
+In Stock workspace → Strategies & backtest, submit a strategy comparison. Open
+Monte Carlo risk, choose one of those strategies and submit Simulate strategy risk.
+The C++ engine reproduces the frozen backtest settings and samples contiguous blocks
+of its net daily equity returns, including cash days. The export links the original
+backtest request hash, strategy, stock, evaluation dates and costs. A threshold
+control estimates conditional drawdown exceedance. Existing costs are not charged
+again. Stock scenarios use the stock's returns instead and remain separately labelled.

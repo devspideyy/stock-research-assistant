@@ -15,11 +15,11 @@ from app.assessment import STRATEGIES, STRATEGY_GUIDE
 
 
 COLORS = {
-    "accent": "#62D9BB",
-    "positive": "#62D9BB",
-    "negative": "#EB8498",
-    "muted": "#617B9B",
-    "secondary": "#E5BC78",
+    "accent": "#214B3C",
+    "positive": "#317359",
+    "negative": "#A34D47",
+    "muted": "#879388",
+    "secondary": "#B59254",
 }
 
 
@@ -78,15 +78,15 @@ def candle_frame(candles: list[dict]) -> pd.DataFrame:
 
 def chart_layout(figure: go.Figure, *, height: int = 440) -> go.Figure:
     figure.update_layout(
-        template="plotly_dark",
+        template="plotly_white",
         height=height,
         margin=dict(l=12, r=18, t=24, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         legend=dict(orientation="h", y=1.06, x=0),
         hovermode="x unified",
-        font=dict(family="Segoe UI, Arial, sans-serif", size=12, color="#A9BBD1"),
-        colorway=[COLORS["accent"], "#8BAFFF", COLORS["secondary"], "#B7A2EC"],
+        font=dict(family="Segoe UI, Arial, sans-serif", size=12, color="#506257"),
+        colorway=[COLORS["accent"], COLORS["secondary"], "#697E91", COLORS["negative"]],
     )
     figure.update_xaxes(showgrid=False)
     figure.update_yaxes(gridcolor="rgba(140,150,170,0.12)", zeroline=False)
@@ -167,7 +167,7 @@ def depth_chart(bids: list[dict], asks: list[dict]) -> go.Figure:
 
 def equity_charts(results: dict[str, dict], *, replay: bool = False) -> tuple[go.Figure, go.Figure]:
     equity, drawdown = go.Figure(), go.Figure()
-    palette = [COLORS["accent"], "#8BAFFF", COLORS["secondary"], "#B7A2EC", "#EB8498"]
+    palette = [COLORS["accent"], COLORS["secondary"], "#697E91", "#A34D47", "#879388"]
     for index, (label, result) in enumerate(results.items()):
         rows = result.get("equity", [])
         color = palette[index % len(palette)]
@@ -205,7 +205,7 @@ def simulation_chart(result: dict, *, replay: bool = False) -> go.Figure:
                 x=list(range(len(path))),
                 y=path,
                 mode="lines",
-                line=dict(color="rgba(100,140,200,0.15)", width=1),
+                line=dict(color="rgba(67,109,84,0.16)", width=1),
                 name="Sample scenarios",
                 showlegend=index == 0,
                 hoverinfo="skip",
@@ -230,7 +230,7 @@ def simulation_chart(result: dict, *, replay: bool = False) -> go.Figure:
             mode="lines",
             line=dict(width=0),
             fill="tonexty",
-            fillcolor="rgba(76,157,255,0.18)",
+            fillcolor="rgba(181,146,84,0.17)",
             name="5th–95th percentile",
         )
     )

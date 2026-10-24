@@ -14,8 +14,14 @@ from app.validation import run_validation, save_study, summary_rows
 from app.workspace import safe_storage
 
 
-def cost_model_selector(key: str) -> str:
-    return st.selectbox("Cost model", ["Hypothetical bps", "NSE delivery estimate"], key=key)
+def cost_model_selector(key: str, dataset: dict | None = None) -> str:
+    historical = dataset is not None and dataset["candles"][-1]["timestamp"] < "2024-10-01"
+    options = ["Hypothetical bps"] if historical else ["Hypothetical bps", "NSE delivery estimate"]
+    if historical:
+        st.caption(
+            "Pre-2024 research uses explicit hypothetical costs. The dated NSE estimate does not cover these years."
+        )
+    return st.selectbox("Cost model", options, key=key)
 
 
 def cost_controls(model: str, key: str) -> dict:
@@ -103,7 +109,7 @@ def accounting_view(result: dict) -> None:
             st.dataframe(pd.DataFrame(result["action_ledger"]), hide_index=True, width="stretch")
         else:
             st.caption(
-                "No declared events in this evaluation window. Try Accounting example in Research data."
+                "No declared events in this evaluation window. Adjusted-library history uses its recorded provider convention; this ledger is for explicitly supplied raw-price events."
             )
     st.caption(
         "Unpaid gross dividend entitlements count in equity, but cannot fund purchases. "
@@ -118,7 +124,7 @@ def validation_lab(dataset: dict) -> None:
         st.caption(
             "Fictional-data exercise · checks software behaviour, not real-market performance."
         )
-    model = cost_model_selector("validation_cost_model")
+    model = cost_model_selector("validation_cost_model", dataset)
     with (
         st.expander("Study design", expanded=not bool(st.session_state.get("validation_study"))),
         st.form("validation_form"),
