@@ -24,7 +24,11 @@ def test_production_workspace_uses_real_history_and_links_strategy_risk(tmp_path
 
     monkeypatch.delenv("STOCK_RESEARCH_TEST_FIXTURES")
     monkeypatch.setenv("STOCK_RESEARCH_DB", str(tmp_path / "production.sqlite"))
-    index = pd.bdate_range("2020-01-01", "2020-12-31")
+    import json
+
+    # Include observed special weekend sessions; business weekdays alone omit Muhurat trading.
+    sessions = json.loads((ROOT / "data/research_sessions.json").read_text())["dates"]
+    index = pd.DatetimeIndex([day for day in sessions if "2020-01-01" <= day <= "2020-12-31"])
     frame = pd.DataFrame(
         {
             "Open": [100 + i * 0.1 for i in range(len(index))],
@@ -46,6 +50,18 @@ def test_production_workspace_uses_real_history_and_links_strategy_risk(tmp_path
         "Upload historical CSV",
     ]
     next(item for item in app.get("button_group") if item.label == "Research section").set_value(
+        None
+    ).run()
+    assert not app.exception
+    assert app.get("plotly_chart")  # deselecting the segment still renders Overview
+    from datetime import date
+
+    period = app.date_input[0].value
+    app.date_input[0].set_value((date(2020, 9, 1), date(2020, 9, 1))).run()
+    assert not app.exception
+    assert any("at least two" in item.value for item in app.info)
+    app.date_input[0].set_value(period).run()
+    next(item for item in app.get("button_group") if item.label == "Research section").set_value(
         "Strategies & backtest"
     ).run()
     assert not app.exception
@@ -59,6 +75,45 @@ def test_production_workspace_uses_real_history_and_links_strategy_risk(tmp_path
     assert risk["symbol"] == "TEST" and risk["is_synthetic"] is False
     assert risk["strategy_calibration"]["evaluation"]["end"] == "2020-12-31"
     assert risk["linked_backtest"] == app.session_state["backtests"]["Buy and hold"]["_provenance"]
+
+
+def test_validation_button_inherits_submitted_custom_backtest():
+    app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
+    navigate(app, "Backtesting")
+    for label, value in {
+        "Starting capital": 200000.0,
+        "Price structure lookback": 50,
+        "Breakout relative-volume threshold": 2.5,
+        "Commission / charges per side (bps)": 30.0,
+        "Slippage per side (bps)": 20.0,
+        "Stop-loss distance (%)": 12.0,
+    }.items():
+        next(item for item in app.number_input if item.label == label).set_value(value)
+    next(
+        item for item in app.slider if item.label == "Capital exposure cap at entry (%)"
+    ).set_value(50)
+    button(app, "Run strategy comparison").click().run()
+    submitted = dict(app.session_state["experiment_settings"])
+    button(app, "Challenge these rules in Validation").click().run()
+    assert not app.exception
+    assert app.session_state["validation_import"]["settings"] == submitted
+    button(app, "Run validation study").click().run()
+    assert not app.exception
+    study = app.session_state["validation_study"]
+    for row in study["rows"]:
+        if row["condition"] == "Base":
+            options = row["provenance"]["options"]
+            for key in [
+                "initial_capital",
+                "lookback",
+                "volume_threshold",
+                "commission_bps",
+                "slippage_bps",
+                "stop_loss_pct",
+                "max_exposure",
+            ]:
+                assert options[key] == submitted[key]
+    assert study["parent_backtests"]
 
 
 def test_accounting_and_validation_offline_flow(tmp_path, monkeypatch):

@@ -11,6 +11,7 @@ from app import storage
 from app.accounting import market_options
 from app.assessment import STRATEGIES
 from app.engine_bridge import EngineClient, validate_daily_candles
+from app.research_protocol import execution_options, require_quality, record_run, frozen_policy
 
 
 def chronological_folds(count: int, folds: int = 3) -> list[tuple[int, int]]:
@@ -30,11 +31,17 @@ def run_validation(
     dataset: dict, labels: list[str], options: dict, *, folds: int = 3, stress: bool = True
 ) -> dict:
     candles = validate_daily_candles(dataset["candles"], dataset.get("bar_interval", "unconfirmed"))
-    windows = chronological_folds(len(candles), folds)
+    offset = dataset.get("window_start", 0)
+    policy = frozen_policy(dataset)
+    if policy:
+        candles = candles[: policy["start_index"]]
+    windows = [
+        (a + offset, b + offset) for a, b in chronological_folds(len(candles) - offset, folds)
+    ]
     if not labels or any(label not in STRATEGIES for label in labels):
         raise ValueError("Choose at least one supported strategy.")
     labels = list(dict.fromkeys([*labels, "Buy and hold"]))
-    settings = {**options, **market_options(dataset)}
+    settings = {**options, **market_options(dataset), **execution_options(dataset)}
     settings.pop("strategy", None)
     settings.pop("evaluation_start", None)
     # A stress run always doubles the explicitly submitted base, never a previous stress.
@@ -52,6 +59,8 @@ def run_validation(
             if condition != "Base":
                 fold_options["cost_multiplier"] = 2
                 fold_options["slippage_bps"] = settings.get("slippage_bps", 5) * 2
+            gap_check = require_quality(dataset, fold_options, end)
+            fold_options["session_gaps_present"] = not gap_check["eligible"]
             for label in labels:
                 run = engine.backtest(candles[:end], strategy=STRATEGIES[label], **fold_options)
                 rows.append(
@@ -77,6 +86,24 @@ def run_validation(
         json.dumps(candles, sort_keys=True, allow_nan=False).encode()
     ).hexdigest()
     created = datetime.now(timezone.utc).isoformat()
+    record_run(
+        "validation",
+        dataset,
+        settings,
+        {
+            "folds": folds,
+            "conditions": 2 if stress else 1,
+            "rows": [
+                {
+                    "strategy": r["strategy"],
+                    "fold": r["fold"],
+                    "condition": r["condition"],
+                    "metrics": r["metrics"],
+                }
+                for r in rows
+            ],
+        },
+    )
     return {
         "version": 1,
         "id": hashlib.sha256((source_hash + created).encode()).hexdigest()[:16],

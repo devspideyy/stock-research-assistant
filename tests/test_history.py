@@ -76,7 +76,10 @@ def test_failed_download_preserves_previous_history_and_cached_reads_do_not_fetc
     history.write_json(history.library_path() / "TEST.json", bundle)
     history.write_json(
         history.library_path() / "catalogue.json",
-        {"stocks": [{"symbol": "TEST", "file": "TEST_NS.parquet"}], "revision": "abc"},
+        {
+            "stocks": [{"symbol": "TEST", "file": "TEST_NS.parquet"}],
+            "revision": history.source_manifest()["revision"],
+        },
     )
     history.write_json(history.library_path() / "download_report.json", {"failures": []})
 
@@ -93,4 +96,7 @@ def test_failed_download_preserves_previous_history_and_cached_reads_do_not_fetc
     history.write_json(history.library_path() / "TEST.json", changed)
     with pytest.raises(ValueError, match="cutoff"):
         history.load_stock("TEST")
-    assert json.loads((history.library_path() / "catalogue.json").read_text())["revision"] == "abc"
+    assert (
+        json.loads((history.library_path() / "catalogue.json").read_text())["revision"]
+        == history.source_manifest()["revision"]
+    )

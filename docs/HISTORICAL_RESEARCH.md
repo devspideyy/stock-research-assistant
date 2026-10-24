@@ -77,7 +77,9 @@ certification, especially for on-demand stocks lacking a raw reference.
 Ordinary overlapping daily returns are spot-checked every 97 observations against
 the raw reference. Material disagreement quarantines the stock. Market-calendar
 completeness, suspensions, settlement restrictions and all corporate actions still
-require review. Annualised metrics keep the disclosed 252-observation convention.
+require review. The [research protocol](RESEARCH_PROTOCOL.md) adds observed-session
+gap gates, causal warm-up and separate elapsed-time CAGR. Daily annualised metrics
+are withheld for explicitly gap-overridden runs.
 Read Historical sources & data quality before interpreting a result.
 
 ## Backtest and Monte Carlo connection
@@ -103,11 +105,14 @@ All 46 ready stocks passed actual native analysis, five strategy backtests, stoc
 scenarios, linked strategy simulations and RSI/ATR/MACD calculation. Three
 representative stocks also passed the multi-fold validation runner. The acceptance
 report in ignored `runs/historical_acceptance.json` records engine hashes and dates.
+The updated run retains all earlier feature history and evaluates each stock's
+complete observed-session tail (currently 3 February–31 December 2020), with
+fractional adjusted research units. It does not certify the entire earlier archive.
 Unit/workflow tests additionally cover cutoff isolation, adjustment rebasing,
 invalid-source handling, reference-start guards and exact agreement between linked
 simulation calibration and backtest metrics. Passing these checks establishes
 software behaviour, not profitability or complete data validity.
 
-Verification: **285 Python tests**, **nine native C++ test groups**, Ruff checks,
+Verification: **299 Python tests**, **nine native C++ test groups**, Ruff checks,
 and the 46-stock acceptance run pass. Browser checks cover the real historical
 workspace and the linked backtest/Monte Carlo flow.

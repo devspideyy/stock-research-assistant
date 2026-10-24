@@ -11,10 +11,16 @@ from app import history, indicators  # noqa: E402
 from app.engine_bridge import EngineClient  # noqa: E402
 from app.assessment import STRATEGIES  # noqa: E402
 from app.validation import run_validation  # noqa: E402
+from app.research_protocol import (  # noqa: E402
+    latest_complete_window,
+    visible_candles,
+    execution_options,
+    require_quality,
+)
 
 
 def check(symbol):
-    dataset = history.load_stock(symbol)
+    dataset = latest_complete_window(history.load_stock(symbol))
     candles = dataset["candles"]
     engine = EngineClient()
     analysis = engine.analyze(candles, price_basis="adjusted")
@@ -22,9 +28,12 @@ def check(symbol):
         "initial_capital": 100000,
         "commission_bps": 10,
         "slippage_bps": 5,
-        "evaluation_start": int(len(candles) * 0.7),
+        "evaluation_start": dataset.get("window_start", 0)
+        + int(len(visible_candles(dataset)) * 0.7),
         "price_basis": "adjusted",
+        **execution_options(dataset),
     }
+    require_quality(dataset, settings)
     runs = {
         label: engine.backtest(candles, strategy=key, **settings)
         for label, key in STRATEGIES.items()
@@ -32,7 +41,7 @@ def check(symbol):
     risk = engine.simulate(
         candles, strategy="price_volume", basis="strategy", paths=100, horizon=60, **settings
     )
-    stock = engine.simulate(candles, paths=100, horizon=60, price_basis="adjusted")
+    stock = engine.simulate(visible_candles(dataset), paths=100, horizon=60, price_basis="adjusted")
     for function in ["RSI", "ATR", "MACD"]:
         indicators.calculate(candles, function)
     if symbol in {"INFY", "TCS", "RELIANCE"}:
@@ -45,6 +54,8 @@ def check(symbol):
         "start": candles[0]["timestamp"],
         "end": candles[-1]["timestamp"],
         "bars": len(candles),
+        "window_start": visible_candles(dataset)[0]["timestamp"],
+        "warmup_bars": dataset.get("window_start", 0),
         "engine_sha256": analysis["_provenance"]["engine_sha256"],
         "strategies": len(runs),
         "strategy_risk_observations": risk["calibration"]["observations"],

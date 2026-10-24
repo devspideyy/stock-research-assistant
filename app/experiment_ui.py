@@ -12,6 +12,17 @@ from app.assessment import STRATEGIES
 from app.ui_helpers import COLORS, chart_layout, json_download, number, percent, show_items
 from app.validation import run_validation, save_study, summary_rows
 from app.workspace import safe_storage
+from app.research_protocol import visible_candles
+
+
+def import_backtest_for_validation() -> None:
+    st.session_state.validation_import = {
+        "settings": dict(st.session_state.experiment_settings),
+        "strategies": list(st.session_state.backtests),
+        "requests": {k: v["_provenance"] for k, v in st.session_state.backtests.items()},
+    }
+    st.session_state.pop("validation_study", None)
+    st.session_state.workspace_page = "Validation"
 
 
 def cost_model_selector(key: str, dataset: dict | None = None) -> str:
@@ -61,9 +72,9 @@ def data_readiness(dataset: dict) -> None:
         a, b, c = st.columns(3)
         a.metric("Price basis", dataset.get("price_basis", "unverified").title(), border=True)
         b.metric("Declared actions", len(dataset.get("corporate_actions", [])), border=True)
-        c.metric("Daily bars", len(dataset["candles"]), border=True)
+        c.metric("Daily bars", len(visible_candles(dataset)), border=True)
         st.caption(
-            f"{dataset['candles'][0]['timestamp']} → {dataset['candles'][-1]['timestamp']} · "
+            f"{visible_candles(dataset)[0]['timestamp']} → {dataset['candles'][-1]['timestamp']} · "
             "Source completeness and the exchange holiday calendar are not certified."
         )
         if dataset.get("corporate_actions"):
@@ -124,23 +135,59 @@ def validation_lab(dataset: dict) -> None:
         st.caption(
             "Fictional-data exercise · checks software behaviour, not real-market performance."
         )
-    model = cost_model_selector("validation_cost_model", dataset)
+    imported = st.session_state.get("validation_import")
+    if imported:
+        st.success(
+            "Linked to the submitted backtest. Rules, capital, charges, stop and allocation are preserved; folds change the evaluation periods only."
+        )
+        with st.expander("Exact inherited experiment"):
+            st.json(imported["settings"], expanded=False)
+        if st.button("Start an independent validation study"):
+            st.session_state.pop("validation_import", None)
+            st.rerun()
+    else:
+        model = cost_model_selector("validation_cost_model", dataset)
     with (
         st.expander("Study design", expanded=not bool(st.session_state.get("validation_study"))),
         st.form("validation_form"),
     ):
         labels = st.multiselect(
-            "Validation strategies", list(STRATEGIES), default=["Price + volume"]
+            "Validation strategies",
+            list(STRATEGIES),
+            default=imported["strategies"] if imported else ["Price + volume"],
+            key="validation_labels_" + ("linked" if imported else "independent"),
         )
         a, b, c = st.columns(3)
         folds = a.selectbox("Chronological folds", [2, 3, 4, 5], index=1)
-        capital = b.number_input("Validation starting capital", 1000.0, 1e9, 100000.0, step=10000.0)
-        slippage = c.number_input("Validation slippage per side (bps)", 0.0, 500.0, 5.0)
-        costs = cost_controls(model, "validation")
+        capital = b.number_input(
+            "Validation starting capital",
+            1000.0,
+            1e9,
+            float(imported["settings"]["initial_capital"]) if imported else 100000.0,
+            step=10000.0,
+            disabled=bool(imported),
+        )
+        slippage = c.number_input(
+            "Validation slippage per side (bps)",
+            0.0,
+            500.0,
+            float(imported["settings"]["slippage_bps"]) if imported else 5.0,
+            disabled=bool(imported),
+        )
+        costs = {} if imported else cost_controls(model, "validation")
+        allow_gaps = st.checkbox(
+            "Allow data gaps in independent validation", value=False, disabled=bool(imported)
+        )
+        raw_reviewed = False
+        if not imported and dataset.get("price_basis") == "raw":
+            raw_reviewed = st.checkbox(
+                "I reviewed raw-price identity and corporate-action coverage for validation",
+                value=False,
+            )
         stress = st.checkbox("Also test 2× costs and slippage", value=True)
         st.caption(
             "First 40% of history warms up features; remaining daily bars form disjoint tests. "
-            "Each test starts in cash. Buy-and-hold is always included. Fixed default rules; no optimisation."
+            "Each test starts in cash. Buy-and-hold is always included. Submitted fixed rules; no optimisation."
         )
         run = st.form_submit_button("Run validation study", type="primary", disabled=not labels)
     if run:
@@ -150,11 +197,21 @@ def validation_lab(dataset: dict) -> None:
                 study = run_validation(
                     dataset,
                     labels,
-                    {"initial_capital": capital, "slippage_bps": slippage, **costs},
+                    dict(imported["settings"])
+                    if imported
+                    else {
+                        "initial_capital": capital,
+                        "slippage_bps": slippage,
+                        "allow_data_gaps": allow_gaps,
+                        "raw_reviewed": raw_reviewed,
+                        **costs,
+                    },
                     folds=folds,
                     stress=stress,
                 )
             st.session_state.validation_study = study
+            if imported:
+                study["parent_backtests"] = imported["requests"]
             st.rerun()
         except (RuntimeError, ValueError, OSError) as exc:
             st.error(str(exc))

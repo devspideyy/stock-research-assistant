@@ -94,11 +94,20 @@ def chart_layout(figure: go.Figure, *, height: int = 440) -> go.Figure:
 
 
 def price_chart(
-    candles: list[dict], analysis: dict | None = None, overlays: list[str] | None = None
+    candles: list[dict],
+    analysis: dict | None = None,
+    overlays: list[str] | None = None,
+    panels: dict | None = None,
+    trades: list[dict] | None = None,
 ) -> go.Figure:
     frame = candle_frame(candles)
+    visible_dates = set(frame.timestamp)
     fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.04
+        rows=2 + len(panels or {}),
+        cols=1,
+        shared_xaxes=True,
+        row_heights=[0.7, 0.3] if not panels else [0.5, 0.15] + [0.175] * len(panels),
+        vertical_spacing=0.035,
     )
     fig.add_trace(
         go.Candlestick(
@@ -116,6 +125,8 @@ def price_chart(
     )
     series = (analysis or {}).get("series", [])
     series_frame = pd.DataFrame(series)
+    if "timestamp" in series_frame:
+        series_frame = series_frame[series_frame.timestamp.isin(frame.timestamp)]
     for index, indicator in enumerate(overlays or []):
         if indicator in series_frame and "timestamp" in series_frame:
             fig.add_trace(
@@ -143,7 +154,42 @@ def price_chart(
     fig.update_xaxes(type="category", nticks=8, rangeslider_visible=False)
     fig.update_yaxes(title_text="Price", row=1, col=1)
     fig.update_yaxes(title_text="Volume", row=2, col=1)
-    return chart_layout(fig, height=420)
+    for row, (name, values) in enumerate((panels or {}).items(), 3):
+        selected = [i for i, stamp in enumerate(values["timestamps"]) if stamp in visible_dates]
+        for label, numbers in values["columns"].items():
+            fig.add_trace(
+                go.Scatter(
+                    x=[values["timestamps"][i] for i in selected],
+                    y=[numbers[i] for i in selected],
+                    name=label,
+                    mode="lines",
+                    line=dict(width=1.3),
+                ),
+                row=row,
+                col=1,
+            )
+        fig.update_yaxes(title_text=name, row=row, col=1)
+        if "RSI" in name:
+            fig.add_hline(y=70, line_dash="dot", line_color=COLORS["muted"], row=row, col=1)
+            fig.add_hline(y=30, line_dash="dot", line_color=COLORS["muted"], row=row, col=1)
+    for side, color, marker in [
+        ("BUY", COLORS["positive"], "triangle-up"),
+        ("SELL", COLORS["negative"], "triangle-down"),
+    ]:
+        fills = [t for t in trades or [] if t["side"] == side and t["timestamp"] in visible_dates]
+        if fills:
+            fig.add_trace(
+                go.Scatter(
+                    x=[t["timestamp"] for t in fills],
+                    y=[t["price"] for t in fills],
+                    mode="markers",
+                    name=side,
+                    marker=dict(color=color, size=9, symbol=marker),
+                ),
+                row=1,
+                col=1,
+            )
+    return chart_layout(fig, height=420 + 140 * len(panels or {}))
 
 
 def depth_chart(bids: list[dict], asks: list[dict]) -> go.Figure:

@@ -4,6 +4,10 @@ A final-year C++ and Python research workstation for Indian cash equities. The n
 
 **Historical research edition.** The main workspace uses a locally cached real-stock library with a hard cutoff of **31 December 2020**. Histories use documented provider-adjusted research units. Synthetic fixtures are reserved for tests. News/live feeds remain optional later integrations; software checks do not establish investment performance.
 
+The [offline research protocol](docs/RESEARCH_PROTOCOL.md) covers shared backtest/validation settings,
+gap checks, causal warm-up, fractional adjusted units, frozen final-period controls,
+the experiment journal, sector context, rating evaluation and seven linked Monte Carlo sensitivity cases.
+
 ## Start on Windows
 
 Use Python 3.12 and a C++17 compiler. VS Code alone does not include a compiler.

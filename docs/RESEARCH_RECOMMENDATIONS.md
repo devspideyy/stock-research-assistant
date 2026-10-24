@@ -110,7 +110,7 @@ be assessed. Feature count and passing software tests do not establish profitabi
 
 ## Verification for this release
 
-The full Python suite passes 274 tests, including native integration and Streamlit
+The original recommendation release passed 274 tests, including native integration and Streamlit
 workflows. The nine existing C++ test groups also pass. Added fixtures cover known
 bullish/bearish cases, missing-volume and daily-interval gates, native provenance,
 holdout timing, causal pullback fills, range exits, both-side fees, histogram totals,
@@ -120,6 +120,11 @@ in the browser. No authenticated financial-data or model call was needed.
 The offline accounting/validation follow-up adds event-conservation, dividend-payment,
 dated-charge, causal fold, stress and study-persistence checks. See
 [its contracts and limits](ACCOUNTING_AND_VALIDATION.md).
+
+The subsequent [offline research protocol](RESEARCH_PROTOCOL.md) implements
+shared validation parameters, gap gating, frozen final-period policies, a journal,
+sector context, descriptive rating evaluation and linked risk sensitivity. See
+[historical verification](HISTORICAL_RESEARCH.md#verification) for the current checks.
 
 ## References and interpretation
 

@@ -16,6 +16,16 @@ namespace finance {
 namespace {
 constexpr double trading_days = 252.0;
 
+int calendar_day(const std::string& stamp) {
+    const int year = std::stoi(stamp.substr(0, 4)), month = std::stoi(stamp.substr(5, 2));
+    int total = std::stoi(stamp.substr(8, 2));
+    const auto leap = [](int y) { return y % 4 == 0 && (y % 100 != 0 || y % 400 == 0); };
+    for (int y = 1900; y < year; ++y) total += leap(y) ? 366 : 365;
+    const int days[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    for (int m = 1; m < month; ++m) total += days[m - 1] + (m == 2 && leap(year) ? 1 : 0);
+    return total;
+}
+
 struct Candle {
     std::string timestamp;
     double open, high, low, close, volume;
@@ -229,6 +239,12 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
     const int lookback = integer_option(options, "lookback", 20, 2, 1000);
     const double initial = option(options, "initial_capital", 100000, 1, 1e12);
     const double max_exposure = option(options, "max_exposure", 1, 0, 1);
+    const std::string position_mode = options.value("position_mode", std::string("whole_shares"));
+    require(position_mode == "whole_shares" || position_mode == "fractional_research", "Invalid position_mode");
+    const bool fractional = position_mode == "fractional_research";
+    const double participation = option(options, "max_volume_participation", 0, 0, 1);
+    require(participation == 0 || options.value("price_basis", std::string("unverified")) == "raw",
+            "Volume participation requires consistent raw price/share units; adjusted research volume is not certified");
     const accounting::CostModel costs(options);
     const double slippage = option(options, "slippage_bps", 5, 0, 1000) / 10000;
     const double stop_loss = option(options, "stop_loss_pct", .08, 0, .99);
@@ -268,10 +284,10 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
         for (const auto& action : plan.on_bar[i]) {
             if (action.type != "cash_dividend") {
                 const double changed = position * action.multiplier;
-                require(std::abs(changed - std::round(changed)) < 1e-7,
+                require(fractional || std::abs(changed - std::round(changed)) < 1e-7,
                         "Fractional share entitlement is unsupported; provide a separate verified cash-in-lieu model");
-                action_ledger.push_back({{"date", day}, {"type", action.type}, {"before", position}, {"after", std::round(changed)}, {"source", action.source}});
-                position = std::round(changed);
+                action_ledger.push_back({{"date", day}, {"type", action.type}, {"before", position}, {"after", fractional ? changed : std::round(changed)}, {"source", action.source}});
+                position = fractional ? changed : std::round(changed);
                 entry_price /= action.multiplier;
                 stop_reference /= action.multiplier;
             } else {
@@ -286,6 +302,8 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
         // Pending signals were created at the previous close. Current OHLC/volume
         // cannot influence an execution at this candle's open.
         if (i > 0 && pending == -1 && position > 0) {
+            require(participation == 0 || position <= candles[i - 1].volume * participation + 1e-8,
+                    "Exit exceeds the prior-day volume cap. Reduce exposure or review liquidity; no unlimited exit fill was fabricated");
             const double fill = c.open * (1 - slippage);
             const double notional = position * fill;
             const auto detail = costs.fee(c.timestamp, notional, true);
@@ -307,7 +325,8 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
         } else if (i > 0 && pending == 1 && position == 0) {
             const double fill = c.open * (1 + slippage);
             const double budget = std::min(cash, (cash + position * c.open) * max_exposure);
-            const double maximum = std::floor(budget / fill);
+            const double limit = participation > 0 ? std::min(budget / fill, candles[i - 1].volume * participation) : budget / fill;
+            const double maximum = std::floor(limit);
             require(maximum <= 9007199254740991.0, "Share quantity exceeds exact integer range");
             std::int64_t lo = 0, hi = static_cast<std::int64_t>(maximum);
             while (lo < hi) {
@@ -315,7 +334,16 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
                 if (mid * fill + costs.fee(c.timestamp, mid * fill, false).total <= budget) lo = mid;
                 else hi = mid - 1;
             }
-            const double quantity = static_cast<double>(lo);
+            double quantity = static_cast<double>(lo);
+            if (fractional) {
+                double lower = 0, upper = limit;
+                for (int iteration = 0; iteration < 70; ++iteration) {
+                    const double middle = (lower + upper) / 2;
+                    if (middle * fill + costs.fee(c.timestamp, middle * fill, false).total <= budget) lower = middle;
+                    else upper = middle;
+                }
+                quantity = lower;
+            }
             if (quantity > 0) {
                 const double notional = quantity * fill;
                 const auto detail = costs.fee(c.timestamp, notional, false);
@@ -385,19 +413,24 @@ json backtest(const std::vector<Candle>& candles, const json& options) {
     const double volatility = returns.size() > 1 ? std::sqrt(squared / (returns.size() - 1)) : 0;
     const json sharpe = volatility > 1e-15 ? json(mean / volatility * std::sqrt(trading_days)) : json(nullptr);
     const double periods = static_cast<double>(candles.size() - evaluation_start - 1);
+    const int calendar_days = calendar_day(candles.back().timestamp) - calendar_day(candles[evaluation_start].timestamp);
+    const bool daily_metrics = !options.value("session_gaps_present", false);
     return {{"strategy", strategy}, {"metrics", {{"total_return", previous_equity / initial - 1},
-            {"max_drawdown", max_drawdown}, {"annualized_volatility", volatility * std::sqrt(trading_days)},
-            {"sharpe", sharpe}, {"trade_count", trades.size()}, {"turnover", traded_notional / initial},
+            {"max_drawdown", max_drawdown}, {"annualized_volatility", daily_metrics ? json(volatility * std::sqrt(trading_days)) : json(nullptr)},
+            {"sharpe", daily_metrics ? sharpe : json(nullptr)}, {"trade_count", trades.size()}, {"turnover", traded_notional / initial},
             {"exposure", sum_exposure / periods}, {"closed_trades", closed_trades},
             {"win_rate", closed_trades ? json(static_cast<double>(wins) / closed_trades) : json(nullptr)},
             {"profit_factor", gross_loss > 0 ? json(gross_profit / gross_loss) : json(nullptr)},
             {"realised_pnl", realised_pnl}, {"fees_paid", fees_paid},
             {"dividend_income", dividend_income}, {"dividend_paid", dividend_paid}, {"dividend_receivable", receivable},
-            {"cagr", nullable(std::pow(previous_equity / initial, trading_days / periods) - 1)}}},
+            {"calendar_cagr", calendar_days > 0 ? nullable(std::pow(previous_equity / initial, 365.2425 / calendar_days) - 1) : json(nullptr)},
+            {"cagr", daily_metrics ? nullable(std::pow(previous_equity / initial, trading_days / periods) - 1) : json(nullptr)}}},
             {"evaluation", {{"start_index", evaluation_start}, {"start", candles[evaluation_start].timestamp},
                             {"end", candles.back().timestamp}, {"bars", candles.size() - evaluation_start}}},
             {"equity", equity_curve}, {"trades", trades}, {"action_ledger", action_ledger}, {"fee_breakdown", fee_totals}, {"assumptions", {
-            "Long-only cash account; whole shares; no leverage. Signals at close execute at next observed open.",
+            "Long-only cash account; no leverage. whole_shares uses integer lots; fractional_research is an adjusted-unit research convention, not broker execution. Signals at close execute at next observed open.",
+            "Optional volume participation uses prior observed daily volume only; oversized exits are rejected, not fabricated. It does not model partial fills, circuits or market impact.",
+            "calendar_cagr uses elapsed calendar days; cagr retains the 252-observation convention. Daily volatility and Sharpe are withheld for declared session gaps.",
             "max_exposure caps allocation including entry costs when buying; later price movements may change portfolio exposure.",
             "Dated cost schedules itemise charges when supplied; otherwise hypothetical commission bps apply. Rounding, tax residency and broker invoice differences remain unmodelled.",
             "Stops are close-based signals executed next open; gaps can exceed the configured stop loss.",
@@ -419,6 +452,7 @@ double quantile(std::vector<double> values, double probability) {
 }
 
 json simulate(const std::vector<Candle>& candles, const json& options) {
+    require(!options.value("session_gaps_present", false), "Daily-return simulation requires a complete observed-session calibration window");
     const auto action_plan = accounting::prepare_actions(candles, options);
     const auto adjusted = signal_candles(candles, action_plan);
     const std::string method = options.value("method", std::string("bootstrap"));
@@ -452,6 +486,10 @@ json simulate(const std::vector<Candle>& candles, const json& options) {
         for (std::size_t i = 1; i < candles.size(); ++i)
             log_returns.push_back(std::log(adjusted[i].close / adjusted[i - 1].close));
     }
+    const int calibration_tail = integer_option(options, "calibration_observations", 0, 0, 100000);
+    require(calibration_tail == 0 || calibration_tail >= 20, "Calibration tail requires at least 20 returns");
+    if (calibration_tail > 0 && log_returns.size() > static_cast<std::size_t>(calibration_tail))
+        log_returns.erase(log_returns.begin(), log_returns.end() - calibration_tail);
     const double mean = std::accumulate(log_returns.begin(), log_returns.end(), 0.0) / log_returns.size();
     double squared = 0;
     for (double r : log_returns) squared += (r - mean) * (r - mean);

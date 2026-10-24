@@ -25,7 +25,16 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 import streamlit as st
 
-from app import history, storage
+from app import history, storage, indicators
+from app.evaluation_ui import final_protocol_panel, benchmark_panel, journal_panel
+from app.research_protocol import (
+    select_window,
+    visible_candles,
+    execution_options,
+    require_quality,
+    record_run,
+    apply_policy,
+)
 from app.attachments import load_evidence_json
 from app.accounting import load_actions, market_options
 from app.assessment import STRATEGIES
@@ -37,6 +46,7 @@ from app.experiment_ui import (
     cost_model_selector,
     data_readiness,
     validation_lab,
+    import_backtest_for_validation,
 )
 from app.engine_bridge import (
     EngineClient,
@@ -95,6 +105,11 @@ RESULT_KEYS = (
     "idea_cards",
     "validation_study",
     "strategy_simulation",
+    "validation_import",
+    "backtest_dataset",
+    "sector_context",
+    "rating_evaluation",
+    "risk_sensitivity",
 )
 
 
@@ -199,12 +214,12 @@ def select_dataset() -> dict | None:
                 if len(period) != 2:
                     st.info("Choose both dates to open the research window.")
                     return None
-                dataset["candles"] = [
-                    c
-                    for c in dataset["candles"]
-                    if period[0].isoformat() <= c["timestamp"] <= period[1].isoformat()
-                ]
-                if len(dataset["candles"]) < 30:
+                try:
+                    dataset = select_window(dataset, period[0].isoformat(), period[1].isoformat())
+                except ValueError as exc:
+                    st.info(str(exc))
+                    return None
+                if len(visible_candles(dataset)) < 30:
                     st.info("Choose at least 30 daily observations.")
                     return None
                 dataset["decision_time"] = dataset["candles"][-1]["timestamp"] + "T15:30:00+05:30"
@@ -343,6 +358,7 @@ def select_dataset() -> dict | None:
                     "price_basis": dataset.get("price_basis"),
                     "corporate_actions": dataset.get("corporate_actions"),
                     "history_quality": dataset.get("history_quality"),
+                    "window_start": dataset.get("window_start", 0),
                 },
                 sort_keys=True,
                 default=str,
@@ -585,7 +601,26 @@ def price_structure(dataset: dict) -> None:
         format_func=lambda text: text.upper(),
         disabled=not bool(analysis),
     )
-    st.plotly_chart(price_chart(dataset["candles"], analysis, overlay), width="stretch")
+    selected_panels = st.multiselect(
+        "Synchronized indicator panels", ["RSI 14", "MACD"], disabled=not bool(analysis)
+    )
+    panels = {}
+    if analysis and "RSI 14" in selected_panels:
+        panels["RSI 14"] = {
+            "timestamps": [r["timestamp"] for r in analysis["series"]],
+            "columns": {"RSI 14": [r["rsi14"] for r in analysis["series"]]},
+        }
+    if "MACD" in selected_panels:
+        result = indicators.calculate(dataset["candles"], "MACD")
+        panels["MACD"] = {"timestamps": result["timestamps"], "columns": result["columns"]}
+    fills = []
+    if st.session_state.get("backtests"):
+        marked = st.selectbox("Trade markers on chart", ["None", *st.session_state.backtests])
+        if marked != "None":
+            fills = st.session_state.backtests[marked]["trades"]
+    st.plotly_chart(
+        price_chart(visible_candles(dataset), analysis, overlay, panels, fills), width="stretch"
+    )
     if analysis:
         summary = analysis.get("summary", {})
         cols = st.columns(4)
@@ -662,6 +697,22 @@ def backtest_lab(dataset: dict) -> None:
             "Breakout relative-volume threshold", min_value=0.1, max_value=10.0, value=1.2, step=0.1
         )
         costs = cost_controls(model, "backtest")
+        liquidity = st.number_input(
+            "Prior-day volume participation cap (%) · raw prices only",
+            0.0,
+            10.0,
+            0.0,
+            step=0.1,
+            disabled=dataset.get("price_basis") != "raw",
+        )
+        allow_gaps = st.checkbox("Allow reported data gaps for this exploratory run", value=False)
+        raw_reviewed = st.checkbox(
+            "I reviewed raw-price identity and corporate-action coverage for this window",
+            disabled=dataset.get("price_basis") != "raw",
+        )
+        st.caption(
+            "Adjusted data uses fractional research units. Whole-share replay needs raw prices and reviewed corporate actions; hypothetical costs are not broker invoices."
+        )
         b, c = st.columns(2)
         slippage = b.number_input(
             "Slippage per side (bps)", min_value=0.0, max_value=500.0, value=5.0
@@ -677,6 +728,16 @@ def backtest_lab(dataset: dict) -> None:
     if run:
         st.session_state.pop("backtests", None)
         st.session_state.pop("experiment_settings", None)
+        st.session_state.pop("sector_context", None)
+        if (
+            not dataset.get("is_synthetic")
+            and dataset.get("price_basis") == "raw"
+            and not raw_reviewed
+        ):
+            st.error(
+                "Record the raw-price identity/action review before whole-share replay. Adjusted-library research is available separately."
+            )
+            return
         options = dict(
             initial_capital=capital,
             lookback=int(lookback),
@@ -685,10 +746,15 @@ def backtest_lab(dataset: dict) -> None:
             slippage_bps=slippage,
             stop_loss_pct=stop / 100,
             max_exposure=exposure / 100,
-            evaluation_start=int(len(dataset["candles"]) * 0.7)
+            evaluation_start=dataset.get("window_start", 0)
+            + int(len(visible_candles(dataset)) * 0.7)
             if evaluation.startswith("Last")
-            else 0,
+            else dataset.get("window_start", 0),
             **market_options(dataset),
+            **execution_options(dataset),
+            max_volume_participation=liquidity / 100,
+            allow_data_gaps=allow_gaps,
+            raw_reviewed=raw_reviewed,
         )
         if len(dataset["candles"]) - options["evaluation_start"] < 2:
             st.warning(
@@ -696,15 +762,36 @@ def backtest_lab(dataset: dict) -> None:
             )
             return
         results = {}
+        try:
+            effective, options, phase = apply_policy(dataset, options, selection)
+            quality = require_quality(effective, options)
+            options["session_gaps_present"] = not quality["eligible"]
+        except ValueError as exc:
+            st.error(str(exc))
+            return
         for label in selection:
             strategy = STRATEGIES[label]
-            result = engine_request("backtest", dataset["candles"], strategy=strategy, **options)
+            result = engine_request("backtest", effective["candles"], strategy=strategy, **options)
             if result is None:
                 break
             results[label] = result
         if len(results) == len(selection):
             st.session_state.backtests = results
             st.session_state.experiment_settings = options
+            st.session_state.backtest_dataset = effective
+            st.session_state.backtest_phase = phase
+            st.session_state.backtest_run_id = safe_storage(
+                record_run,
+                "backtest",
+                dataset,
+                options,
+                {
+                    "phase": phase,
+                    "quality": quality,
+                    "strategies": selection,
+                    "metrics": {label: r["metrics"] for label, r in results.items()},
+                },
+            )
             st.rerun()
     results = st.session_state.get("backtests")
     if not results:
@@ -713,6 +800,8 @@ def backtest_lab(dataset: dict) -> None:
         )
         return
     st.caption("Showing the last submitted experiment. Change settings and run again to update it.")
+    st.caption("Run scope: " + st.session_state.get("backtest_phase", "exploratory"))
+    final_protocol_panel(dataset, results, st.session_state.get("experiment_settings", {}))
     with st.container(horizontal=True, gap="small"):
         for label, result in results.items():
             st.metric(
@@ -730,6 +819,7 @@ def backtest_lab(dataset: dict) -> None:
                 "Strategy": label,
                 "Total return": percent(metric.get("total_return")),
                 "CAGR (daily assumption)": percent(metric.get("cagr")),
+                "CAGR (elapsed time)": percent(metric.get("calendar_cagr")),
                 "Max drawdown": percent(metric.get("max_drawdown")),
                 "Annualized volatility": percent(metric.get("annualized_volatility")),
                 "Sharpe (assumptions apply)": number(metric.get("sharpe")),
@@ -748,11 +838,12 @@ def backtest_lab(dataset: dict) -> None:
     with performance:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         st.caption("Net returns include submitted charges. Open positions remain marked to market.")
+        benchmark_panel(st.session_state.get("backtest_dataset", dataset), results)
+        journal_panel()
         st.button(
             "Challenge these rules in Validation",
             icon=":material/fact_check:",
-            on_click=go_page,
-            args=("Validation",),
+            on_click=import_backtest_for_validation,
         )
     with replay_tab:
         replay = st.toggle("Animated backtest replay", value=True)
@@ -779,7 +870,11 @@ def backtest_lab(dataset: dict) -> None:
             st.json(st.session_state.get("experiment_settings", {}), expanded=False)
             show_items(results[selected].get("assumptions"))
     with risk_tab:
-        strategy_risk(dataset, results, st.session_state.get("experiment_settings", {}))
+        strategy_risk(
+            st.session_state.get("backtest_dataset", dataset),
+            results,
+            st.session_state.get("experiment_settings", {}),
+        )
     export = {
         "symbol": dataset["symbol"],
         "is_synthetic": dataset["is_synthetic"],
@@ -838,9 +933,17 @@ def monte_carlo_lab(dataset: dict) -> None:
         )
         run = st.form_submit_button("Simulate scenarios", type="primary")
     if run:
+        if not dataset.get("is_synthetic"):
+            from app.research_protocol import quality_report
+
+            if not quality_report(dataset)["eligible"]:
+                st.error(
+                    "Choose a complete observed-session window before daily-return simulation."
+                )
+                return
         result = engine_request(
             "simulate",
-            dataset["candles"],
+            visible_candles(dataset),
             method="bootstrap" if method_label.startswith("Historical") else "gbm",
             paths=int(paths),
             horizon=int(horizon),

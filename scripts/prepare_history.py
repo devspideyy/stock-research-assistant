@@ -33,10 +33,12 @@ def main():
     if not reference_path.exists():
         reference_path.parent.mkdir(parents=True, exist_ok=True)
         raw = history.download(history.ARCHIVE_URL)
+        history.verify_reference(raw)
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             if "stock_metadata.csv" not in archive.namelist():
                 raise ValueError("Reference archive does not match the expected schema.")
         reference_path.write_bytes(raw)
+    history.verify_reference(reference_path.read_bytes())
     with zipfile.ZipFile(reference_path) as archive:
         cohort = list(
             csv.DictReader(io.StringIO(archive.read("stock_metadata.csv").decode("utf-8-sig")))

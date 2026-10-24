@@ -1,21 +1,32 @@
 """One stock, one historical window, with research and experiments in context."""
 
 import streamlit as st
+from app.research_protocol import visible_candles
+from app.evaluation_ui import source_health, experiment_context, rating_panel
 
 from app.ui_helpers import number, percent, price_chart, render_assessment
 
 
 def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
-    candles = dataset["candles"]
+    candles = visible_candles(dataset)
     st.caption("THE EQUITY LEDGER  /  STOCK RESEARCH")
     st.title(dataset.get("name", dataset["symbol"]))
     st.caption(
         f"NSE · {dataset['symbol']} · {candles[0]['timestamp']} — {candles[-1]['timestamp']} · "
         "Daily history · Prices and results belong to this selected stock and window."
     )
-    section = st.segmented_control(
-        "Research section", list(panels), default="Overview", key="stock_section", width="stretch"
+    section = (
+        st.segmented_control(
+            "Research section",
+            list(panels),
+            default="Overview",
+            key="stock_section",
+            width="stretch",
+        )
+        or "Overview"
     )
+    source_health(dataset)
+    experiment_context()
     if section != "Overview":
         panels[section or "Overview"]()
         return
@@ -62,6 +73,7 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
             expanded=True,
         ):
             render_assessment(evidence)
+    rating_panel(dataset)
     quality = dataset.get("history_quality", {})
     with st.expander("Historical sources & data quality"):
         st.write(dataset["description"])

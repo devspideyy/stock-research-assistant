@@ -16,6 +16,7 @@ import pandas as pd
 import requests
 
 from app.engine_bridge import validate_daily_candles
+from app.research_protocol import fingerprint
 
 ROOT = Path(__file__).resolve().parents[1]
 CUTOFF = "2020-12-31"
@@ -62,10 +63,32 @@ def catalogue() -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"stocks": []}
 
 
+def source_manifest() -> dict:
+    return json.loads((ROOT / "data/history_manifest.json").read_text(encoding="utf-8"))
+
+
+def verify_reference(raw: bytes) -> None:
+    manifest = source_manifest()
+    members = manifest.get("reference_members_sha256")
+    if members:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            for name, expected in members.items():
+                if (
+                    archive.getinfo(name).file_size > 80_000_000
+                    or hashlib.sha256(archive.read(name)).hexdigest() != expected
+                ):
+                    raise ValueError("Reference CSV content differs from the committed manifest.")
+        return
+    if hashlib.sha256(raw).hexdigest() != manifest["reference_sha256"]:
+        raise ValueError(
+            "Reference archive checksum differs from the committed manifest. Review the data revision; it will not be silently replaced."
+        )
+
+
 def refresh_catalogue() -> dict:
     """Pin a public dataset revision; list files without fetching the entire repository."""
     api = f"https://api.github.com/repos/{REPOSITORY}"
-    revision = json.loads(download(api + "/commits/main", 2_000_000))["sha"]
+    revision = source_manifest()["revision"]
     folders = json.loads(download(api + f"/contents/data?ref={revision}", 1_000_000))
     tree = next(item["sha"] for item in folders if item["name"] == "NSE")
     files = json.loads(download(api + f"/git/trees/{tree}", 5_000_000))
@@ -211,13 +234,25 @@ def prepare_frame(frame: pd.DataFrame, symbol: str, reference: list[dict] | None
 
 def fetch_stock(symbol: str) -> dict:
     listing = catalogue()
+    if listing.get("revision") != source_manifest()["revision"]:
+        raise ValueError(
+            "Local catalogue revision differs from the committed manifest. Refresh the catalogue first."
+        )
     entry = next((item for item in listing["stocks"] if item["symbol"] == symbol), None)
     if entry is None:
         raise ValueError("Stock is absent from the pinned historical catalogue.")
     url = f"https://raw.githubusercontent.com/{REPOSITORY}/{listing['revision']}/data/NSE/{entry['file']}"
     raw = download(url, 5_000_000)
-    bundle = prepare_frame(pd.read_parquet(io.BytesIO(raw)), symbol, reference_rows(symbol))
+    blob = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+    if entry.get("git_blob") and blob != entry["git_blob"]:
+        raise ValueError("Historical file does not match its pinned Git blob.")
+    expected = source_manifest()["stocks"].get(symbol)
+    if expected and hashlib.sha256(raw).hexdigest() != expected["source_sha256"]:
+        raise ValueError("Historical source checksum differs from the committed manifest.")
     reference_path = library_path() / "nifty_source.zip"
+    if reference_path.exists():
+        verify_reference(reference_path.read_bytes())
+    bundle = prepare_frame(pd.read_parquet(io.BytesIO(raw)), symbol, reference_rows(symbol))
     if reference_path.exists():
         with zipfile.ZipFile(reference_path) as archive:
             metadata = pd.read_csv(io.BytesIO(archive.read("stock_metadata.csv")))
@@ -253,4 +288,9 @@ def load_stock(symbol: str) -> dict:
     bundle = json.loads((library_path() / f"{symbol}.json").read_text(encoding="utf-8"))
     if bundle["is_synthetic"] or any(row["timestamp"] > CUTOFF for row in bundle["candles"]):
         raise ValueError("Historical library provenance/cutoff check failed.")
+    expected = source_manifest()["stocks"].get(symbol)
+    if expected and fingerprint(bundle["candles"]) != expected["candles_sha256"]:
+        raise ValueError(
+            "Cached history checksum differs from the committed manifest. Re-import the pinned source before research."
+        )
     return bundle

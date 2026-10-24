@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "revision": "ea1fded134119cd580280ff6e3486bdf06e04c06",
+  "cutoff": "2020-12-31",
+  "repository": "aswinv90/indian-market-historical-data",
+  "reference_sha256": "d7b57b118e0c7702a46bbfce5446cdd5cc970d3615f42d29d968c90420e46df3",
+  "stocks": {
+    "ADANIPORTS": {
+      "file": "ADANIPORTS_NS.parquet",
+      "git_blob": "5f28b1c37cb1c497ca1742c5c203bf657150ab5e",
+      "source_sha256": "640218a3005df4e3b41ef5ca6c4a59192a0e4a3a4181a4ed236bb2b520ee99aa",
+      "candles_sha256": "f0af857d05752683a554ea7283b4003bca8e82b8b733f120c298aefcb2da17da"
+    },
+    "ASIANPAINT": {
+      "file": "ASIANPAINT_NS.parquet",
+      "git_blob": "a83ddae1744b3d257711a0e62d9eec4c218f5343",
+      "source_sha256": "316e4e833d11b82c1af844eeee61bb0f716506d0793af29a6753e5f16ce8c819",
+      "candles_sha256": "18c4d7e48751bba42c5883a29aacfc414fe442c187117047efb0321736996d61"
+    },
+    "BAJAJ-AUTO": {
+      "file": "BAJAJ-AUTO_NS.parquet",
+      "git_blob": "be788699f69f01a85f3d4f9b5eb8d9ea3b740444",
+      "source_sha256": "070ebe087f816148b691aa3e0d2d361aa2c7d010a99c2db9f4acec166dc3826e",
+      "candles_sha256": "477f0234b4e80f2453b1f1bfeb60146c37059712f19c589c37c113acd777bb1e"
+    },
+    "BAJAJFINSV": {
+      "file": "BAJAJFINSV_NS.parquet",
+      "git_blob": "e5a24217eb19bf9dd5cadaae4f2ad8a864c37f37",
+      "source_sha256": "5399a7d8397822e3686b193db3e358dc26c70bf27054cefda823f0571ad96db3",
+      "candles_sha256": "08460f1113974b477bda38ee9a20470cdf25bee24bf1416333f97058d2450f4e"
+    },
+    "BAJFINANCE": {
+      "file": "BAJFINANCE_NS.parquet",
+      "git_blob": "401b966ca4b35a9b8929b165e0934fbd4c4e3776",
+      "source_sha256": "0b18c7c968a3659a9a87f8519efb80421bb0c06cb4e0a6da78e495d90f9263ce",
+      "candles_sha256": "c5640394dc8e23f70e29898a95428710017c3c712d06842802a3de4c5f5e856b"
+    },
+    "BHARTIARTL": {
+      "file": "BHARTIARTL_NS.parquet",
+      "git_blob": "87b15f5a80c94b3c6a820683726483fcb3670e6f",
+      "source_sha256": "f03ec2e286664cc6d5bc34b00b13e452e023d205328fca2e43275c722a81337d",
+      "candles_sha256": "c5e4587ef072fd2148d70128eb6b9dde1c2d156a267eb42db4ff57ea0001148e"
+    },
+    "BPCL": {
+      "file": "BPCL_NS.parquet",
+      "git_blob": "0e70e0da8ef7113505f878729f020c924e5844ee",
+      "source_sha256": "729ce75d614c5e592409044f1197359e2046cc3e84b0be0e05c5bd54d6cdff6c",
+      "candles_sha256": "1dc483912b7f85ca0db7e96b1e18386e50fa5dee919ff2ba6c643c46e8f80a80"
+    },
+    "BRITANNIA": {
+      "file": "BRITANNIA_NS.parquet",
+      "git_blob": "315428a137abad7dcd32690316b660978ab35c34",
+      "source_sha256": "7c649de61da374ee3a198ce27decce34f8d0b6ced93d671654f4035c19b600d4",
+      "candles_sha256": "2140a24ac3d7dcd057e0ee7ebf1ef38c34e17687fff9aeac1c24c84637257cea"
+    },
+    "CIPLA": {
+      "file": "CIPLA_NS.parquet",
+      "git_blob": "c02855ad324efc6e739a62ff2a968757483b14d7",
+      "source_sha256": "e9615f0547f2c887b0d0619b3d607619570ba55c904826cad05dc4344a6f3254",
+      "candles_sha256": "939a5050667be666596e73368d06583c84053f2fcd420e4c649ccde7bc3ecf65"
+    },
+    "COALINDIA": {
+      "file": "COALINDIA_NS.parquet",
+      "git_blob": "fe15daf680e55f354d35692a2dd5e490be994485",
+      "source_sha256": "d6f312080ac70e1367ab16c4eb6c876b83085bcd52c4f84d350f940de885828d",
+      "candles_sha256": "8fdc8d5ee4385b1cf64c316d3bb91fd7a82eb70be6992e72a36d2aa5d3b525ee"
+    },
+    "DRREDDY": {
+      "file": "DRREDDY_NS.parquet",
+      "git_blob": "a82579b6bfb538dcad92fd549e42b0ff181060c6",
+      "source_sha256": "da505e7d897825e04e561faa13c569c3d597ba092a6f38c2c0956a942e6c394b",
+      "candles_sha256": "2838a590c1545d52eeffa74bb1eb436c303b2f0f47598197528c35faab7fcefc"
+    },
+    "EICHERMOT": {
+      "file": "EICHERMOT_NS.parquet",
+      "git_blob": "a0e78e5673ef600b620ce7a5f956928ee0d866ad",
+      "source_sha256": "039b20aec3a630361a84c57f8ba21e522012492dcbbbfa5dc618d193b62bfa5a",
+      "candles_sha256": "6b4a169f6ae6ef34f64e28162235592f0de9d81c3fd83cb17020c1ddf4274943"
+    },
+    "GAIL": {
+      "file": "GAIL_NS.parquet",
+      "git_blob": "3f2f83b02c8fe2d5d8c565189fd72d5790503099",
+      "source_sha256": "c2bff5ef17b7ec3d7b87f4fca4b5f0a421414b8405ea02634ed09c82473fa499",
+      "candles_sha256": "868edc25734a7f1d2b4230bd8867e61ba0c16849608d5599fa44904c4655310b"
+    },
+    "GRASIM": {
+      "file": "GRASIM_NS.parquet",
+      "git_blob": "37a6ebc44c92f9ec115d5f0bbbe5110779d76d2c",
+      "source_sha256": "2458dedb25784196d0aa600946c42fd5caf1afb579ffdb99778368df285e5b20",
+      "candles_sha256": "5161c36ac04a606c451759d67475c64244f85c0a4daf7c21b40093f9cfebc6c3"
+    },
+    "HCLTECH": {
+      "file": "HCLTECH_NS.parquet",
+      "git_blob": "5af8e63a0ee8725e59feb4eb88157c3ca8f3c0f8",
+      "source_sha256": "94e1c9f709e9230f4844d53dd11cc05e2212fd549db975099065ad745d2ded4f",
+      "candles_sha256": "08b97cd916807328b078ff38227bb0d888e62a98ba592d8081e56541dfd63902"
+    },
+    "HDFCBANK": {
+      "file": "HDFCBANK_NS.parquet",
+      "git_blob": "57f812df68a20cca3028d7e3765ef0402f5e8f6d",
+      "source_sha256": "21c2b28f4823e24f157234604007f3b358d828a88d2a8f75cd63543876fe64b4",
+      "candles_sha256": "0b6b2609cfd8310de3bbc632e67fbbbd91ba88658360708a047e93f9c0ebdee4"
+    },
+    "HEROMOTOCO": {
+      "file": "HEROMOTOCO_NS.parquet",
+      "git_blob": "e45fbdd3c272223e64c4f931931688e14cea6bfe",
+      "source_sha256": "1f9cc1312bee318f038386d801124d4843a42454e6c0edcfa5b7e766b9134a12",
+      "candles_sha256": "1fda7641fce024e480afd2e24a39099fe9c3f52b8a0ed34509245afe4dd34195"
+    },
+    "HINDALCO": {
+      "file": "HINDALCO_NS.parquet",
+      "git_blob": "d3380b2f84810656e091007b1852b3045d98981b",
+      "source_sha256": "fb838637cbd6b9531c2fb64808ae1350002cdaf5285c53f73f93fc08ab7cec23",
+      "candles_sha256": "2e4f8f927116c4e6235e6e64952d780af6012e278ce5f4e09b4a0256b6e7c327"
+    },
+    "HINDUNILVR": {
+      "file": "HINDUNILVR_NS.parquet",
+      "git_blob": "e4d0d2bab7614680693cdb968322e38121466d6d",
+      "source_sha256": "4b6043c37a22d67a1327f32d6d9c8050f7267988ec3d72e3017c9d7d62fdc99b",
+      "candles_sha256": "eebddd01678ffaaef1113d84e4cb62351762c2d933460804659354c5628a4e8c"
+    },
+    "ICICIBANK": {
+      "file": "ICICIBANK_NS.parquet",
+      "git_blob": "1251f1bdcc1cc0e7173228c3e5ffe6de8bc17b99",
+      "source_sha256": "a1189c1c5f1c17e7e0bc320314f76bf19c16d8cf85d9f899d9b8826e4050019c",
+      "candles_sha256": "4d323a5ab44880ee909866b3cef7249a1897b2d680343cee4dc559cf6ab3aaa3"
+    },
+    "INDUSINDBK": {
+      "file": "INDUSINDBK_NS.parquet",
+      "git_blob": "bca23568ffb2e1a52c0eaa4e929a2defb63ce3d5",
+      "source_sha256": "4a05a8f2a1a2bd3373080bd17fdde56245101072e6beb10a9d7c67674f0293b6",
+      "candles_sha256": "6b27b81d33463c7f83f979d71c744e8559cf80de69943ee339ee1190711a67b6"
+    },
+    "INFY": {
+      "file": "INFY_NS.parquet",
+      "git_blob": "3dc5d7870f9da0775efe261c89b01dc6f7864328",
+      "source_sha256": "496567a627b8786c7f9acc7852dd344dbdcbdf0e492d979d369cb327af869279",
+      "candles_sha256": "b99823f603dd8ef5b83c321718e8186da4cfd76197d51a08526fb86af1be4f06"
+    },
+    "IOC": {
+      "file": "IOC_NS.parquet",
+      "git_blob": "27b62caa4d4452bb9e898e744adb761e732c26f1",
+      "source_sha256": "9058bff8d68f1f5b36bece0cbf8fc274ba869dcab0e2c70f200dd44763ea02fc",
+      "candles_sha256": "5b17914bc8fda43a8d5b1bc4ff9d7399111127d3caf1c86eecc1e13f561981c9"
+    },
+    "ITC": {
+      "file": "ITC_NS.parquet",
+      "git_blob": "ca874fcbc0b6f9569389d12e2085e5c501e06dde",
+      "source_sha256": "89e9e04080e4e0edcee1050bae965b8a3f3830f7fe18a24bfc4b88257cea02f8",
+      "candles_sha256": "b826eaf6a59b11b2250458338699d8dadbf2fafaa563108847e51f590bf8fa28"
+    },
+    "JSWSTEEL": {
+      "file": "JSWSTEEL_NS.parquet",
+      "git_blob": "2e32f156768ee9ffaae0bc7a5b8113e328c34392",
+      "source_sha256": "3a3f7f96454db52e06960bc67b8212c222eee980ae828565f8fec46b55f845a7",
+      "candles_sha256": "2a74e6b04058a97855c7f49b4a6fea00f7ac320b246960ec42f6a7aed4bcac1a"
+    },
+    "KOTAKBANK": {
+      "file": "KOTAKBANK_NS.parquet",
+      "git_blob": "e032b43abde7ced4709bde0b7b8014c76631a351",
+      "source_sha256": "0dae6f03289d95910e2d1375be53ceea4ceae34482740f6e9995685066477761",
+      "candles_sha256": "789ea0ba78763335b5688b4f2b568288f8483d79b4d7f1857908ae4e760e612a"
+    },
+    "LT": {
+      "file": "LT_NS.parquet",
+      "git_blob": "164a674a2791c202385f0d2701b6c0a31b64ed6d",
+      "source_sha256": "e374dfc4af48bc53f524fe63a1c41bbd39fdac90dd9ff1c580942dfeb40f274e",
+      "candles_sha256": "3f15790ddc1e19bf9ec39076112880fc085f91637d69d390cab1b0a7748baf88"
+    },
+    "M&M": {
+      "file": "M&M_NS.parquet",
+      "git_blob": "dcfdaa8b4ddb9834907788a241700ffc97b7fb08",
+      "source_sha256": "296bd4c16635793eee02ccaf82d9d29d3efbba6e85f360a75c4e0b87ef0fc24d",
+      "candles_sha256": "29ef5501084cc185989537b44dc3a1af49122846b382893f033d5e7473406a44"
+    },
+    "MARUTI": {
+      "file": "MARUTI_NS.parquet",
+      "git_blob": "8a4e8365296d9c0bd738c0d883466714f2cab73b",
+      "source_sha256": "4eda3128ff3badd21f5fb23292e3803e0a6420eea028a122cc8c2eb030fc063d",
+      "candles_sha256": "4dd385cea8063f33572b00565922245db90126caa223a0e91239d110f5eec923"
+    },
+    "NESTLEIND": {
+      "file": "NESTLEIND_NS.parquet",
+      "git_blob": "b410efe509e1654249bbc056696792a58c043650",
+      "source_sha256": "071792d2f963ebe572474613d9c83423dd369faf60249b73c9ffe9e0b7cecf86",
+      "candles_sha256": "cfdfec0d3cc29346f9f691ed58f5e4a6eea178f49ec6857bd4c51f97851b485f"
+    },
+    "NTPC": {
+      "file": "NTPC_NS.parquet",
+      "git_blob": "1c5be3c812001e9009c24f4b21115198ef3d4bd0",
+      "source_sha256": "7bfa1a1450580fd4fd951fae8e28379edc3ece7c35276ef7d65e0497dd674172",
+      "candles_sha256": "e4be5c82a832bd4afc1ad7930157bf101ce640f6fdd12b29eb61d9bb7f961ad7"
+    },
+    "ONGC": {
+      "file": "ONGC_NS.parquet",
+      "git_blob": "3b6daa48b1010a5b8ac61586898fc97d1a1f4d6a",
+      "source_sha256": "4f982fb6f40cfe633ab5b13ae81c0b0f8ba6791431b40db6551bf6b8ca5b71de",
+      "candles_sha256": "7d7a298f5be0df29ca15da81ed637b3ea98efbc0439b5f74844d628dfbaa41a8"
+    },
+    "POWERGRID": {
+      "file": "POWERGRID_NS.parquet",
+      "git_blob": "4df7708d2ca514f46ff16e67d9c2c8bc55e65331",
+      "source_sha256": "341d001219f057c0fc03d6e81d286c6ed40f1752bbf33dfc6b1ef5613deed3e8",
+      "candles_sha256": "b8dc1c38923e25d5ceffcac8d156fffe6c754ca2bcf4ce7f3205681170efff0d"
+    },
+    "RELIANCE": {
+      "file": "RELIANCE_NS.parquet",
+      "git_blob": "5cd072114d3d1535891ad493b0037b9273494bb0",
+      "source_sha256": "a65dd12ab7e29107a60cd8e27d836ac02aa51a91f5c0d3ca4517a2cb5b1eff0a",
+      "candles_sha256": "84f7a731cc0566a285c4f398b4517a474739065116f4c8d063e043bcc2f251aa"
+    },
+    "SBIN": {
+      "file": "SBIN_NS.parquet",
+      "git_blob": "0086b74408dacba5d4dc52d7d15bf55a6ce1ef64",
+      "source_sha256": "6313fe4baeb4c133fd56309d049c1796c7d201e56378cc6ff8b34912eb684951",
+      "candles_sha256": "a2fc87960f63ed019fd720ead46b263153dc67a5ff1e5319372189eb42f98d1c"
+    },
+    "SHREECEM": {
+      "file": "SHREECEM_NS.parquet",
+      "git_blob": "0bb74e98b58ae6dde65c7e98e3d3383afcfa7d09",
+      "source_sha256": "48a1a06084277991e9335ae22ec275c5eccaee4d00b7aae07d6f6e201d9b49b1",
+      "candles_sha256": "16e968aa66aac21694e6fbf27fc5ee3d3079f7785c8267b435a0b369628ea262"
+    },
+    "SUNPHARMA": {
+      "file": "SUNPHARMA_NS.parquet",
+      "git_blob": "63cac42b9a914242c829a3bae02b16ce16314add",
+      "source_sha256": "47c82c35900d6ae44e72fa4dca2a0d7faf3bc331a44441a7f939166e9e7d9cdb",
+      "candles_sha256": "ec58f85a524984c87aa8af936881a8827d6924001ad96aa3d15f34fcaf8b7337"
+    },
+    "TATASTEEL": {
+      "file": "TATASTEEL_NS.parquet",
+      "git_blob": "e056a46ca2982f693f6f780ea9e12917b8225ff4",
+      "source_sha256": "7f00bdcf5c219dc384c6b560c1c8bf8afac2b3eb39752703d5eec72beae2a5d5",
+      "candles_sha256": "7d13a8c607f1df71f84dce3d76ec6fe203c3a85cf93f04aa316ffac4e288fc21"
+    },
+    "TCS": {
+      "file": "TCS_NS.parquet",
+      "git_blob": "5dcf47388b0cfa23bd222764d1dad58894ffb83f",
+      "source_sha256": "2ababb58b773b9a188b65e360a94f73f161698c7e6a0fed9094d8c2ff8701d41",
+      "candles_sha256": "55a434d458db1e9ff45e45a7022e376c73b64eb23036b67eea2cb6be196d5cb3"
+    },
+    "TECHM": {
+      "file": "TECHM_NS.parquet",
+      "git_blob": "6b1a50cad895586789eca365df34ebdcea547073",
+      "source_sha256": "5e04ffbcdeef277643e016d1fe6394671f3fc9d6ea2bb18a7cda15f56400a5f9",
+      "candles_sha256": "3250fc22f5207db206fd2e3509aa11dce6a396ae6b717ca08f81a9cb7926069c"
+    },
+    "TITAN": {
+      "file": "TITAN_NS.parquet",
+      "git_blob": "c035732f6bae0d62fd43405c92035c0094ac173f",
+      "source_sha256": "f9ef735996fc46ad69d8a205a6ed0f614fba4d463672172f39d1f2e075c1dc65",
+      "candles_sha256": "fefbc7e734ed1af2c9dee17aa373e898828184c1c43cac65cb8b38cc558d67bf"
+    },
+    "ULTRACEMCO": {
+      "file": "ULTRACEMCO_NS.parquet",
+      "git_blob": "5d24cf9273eecba9f2145902e1f30d7819a2abd7",
+      "source_sha256": "e4c106d77285c3426dfe004183f002799b2560d543d3899c9d3db886436bc1f1",
+      "candles_sha256": "2248eb9a7c7bb783ab1ba0c1034cb7e7cf0340070f337dfe06bcebcf79a16002"
+    },
+    "UPL": {
+      "file": "UPL_NS.parquet",
+      "git_blob": "f8d26a26c8bdb52f45cff2efbb021794e112c5ca",
+      "source_sha256": "bb41177a469f38f8adba5108eb6462d4d19874c425ec85c445c56884e274b278",
+      "candles_sha256": "2325315064c0908b1ff67c264a48c403086cb466bcb4f4776346ea5f668af0e2"
+    },
+    "VEDL": {
+      "file": "VEDL_NS.parquet",
+      "git_blob": "b819ec45b3248b9e9d7e61fb47956a3ee3f2de0d",
+      "source_sha256": "8ea1e9104a7293b04be4a68e933903a088c00d610836682c869ef29058709e7a",
+      "candles_sha256": "d2f94089f32415fc742f60a47161f2adbb102e46f0dd2fafef7ede2df8a16b34"
+    },
+    "WIPRO": {
+      "file": "WIPRO_NS.parquet",
+      "git_blob": "0e9255eb5b8f0773dcd436f3d76e5ae1fdcb08d8",
+      "source_sha256": "65104ff76b673ec62dd804cb37e84f53a88f27494b40a98296d616f2cb896d58",
+      "candles_sha256": "5cf2626a048645a259f67b46e1e541d16c2c147737a6a49a4e5747dd242fded4"
+    },
+    "ZEEL": {
+      "file": "ZEEL_NS.parquet",
+      "git_blob": "f3a3c68cf7d5b1cbdc0ce82b46411917f0d27da3",
+      "source_sha256": "4b43719ba2f9954359301f275c9351d6d7b2242a9ee584af17970ce5b3b6cbed",
+      "candles_sha256": "42d3b9c8a64d871138db4eeaeede956151368d18cadb96707ad52597b46a003f"
+    }
+  },
+  "reference_members_sha256": {
+    "ADANIPORTS.csv": "e496e933c697478d85be82384666a392623579c3d086d55875deb6e01ec041ef",
+    "ASIANPAINT.csv": "fda675f82e25c41b6cd71f68c52b9eaf17faca10e3487826f4b72ea536e5ace4",
+    "AXISBANK.csv": "5f62e905ae2bef7203904cea3c2d3cbedc75a6ffd82bf746d4ad56bec65b0e19",
+    "BAJAJ-AUTO.csv": "d43d0aa2a2b74d54c530d00863ec496ae3dc08609c32b88f65e9e04cca470126",
+    "BAJAJFINSV.csv": "22a641e47f921ad0a66505f28c55102ee8bbc5b810be9824b16a745180ee69c9",
+    "BAJFINANCE.csv": "9864cb2c5ba3d5bac93af867c381546a058ffe59cf19486b0ab48b9405cd3a73",
+    "BHARTIARTL.csv": "206963b1dfe72cbe501e4738f7b253347aacbf1ba2e224b5fb43743a601325e3",
+    "BPCL.csv": "8c2689dd36066fe5fc51b0a56b5e4fc539a5d25f86a06611e5c85da83a6f3f59",
+    "BRITANNIA.csv": "34bffe6649856b8201e42938cf8a822754c3f68fffbae472183dd0e113255862",
+    "CIPLA.csv": "152f508d58508efe6464c0f80dc9a3028a4eff37f4d7bf1af04b5627b49cf877",
+    "COALINDIA.csv": "14aef504a9a3a7a3415d4030e3f5e1c60bbe1557e1be204477eddb6cfc8fa3ac",
+    "DRREDDY.csv": "dcddae35868ddf89e0d28af0d5db00159c5c2cbbb74bde44ec5b7d7f27db3f80",
+    "EICHERMOT.csv": "1e29a24077de25c97562eb9eb02cc64d8724460659c99c065afef04a46cc6393",
+    "GAIL.csv": "7f123269c3d3db6a64793140336dae2d26e2e9e01579c718019251b3203d8cf9",
+    "GRASIM.csv": "99fe6b73b44de7be66e8ba6a54117485bab29e542e41f126a5d912920b1b1fa8",
+    "HCLTECH.csv": "78e9439bedb1528085316bb04f91ffc09f875908183922b5137802e73cc35630",
+    "HDFC.csv": "1e6beb1763160bec57dc7f076394c06afcb9f174e51e25f41d73aa5acdab1555",
+    "HDFCBANK.csv": "b8921fa58b69a20aaf21056007fbbb9a2de5b2fa723eb25e65fb27522efea40a",
+    "HEROMOTOCO.csv": "360c7ea2ac7e935bdc1cd6aa884acba144449a81373789774c1c948e92f8b478",
+    "HINDALCO.csv": "b6f3c113bd4a2d8a90ac139b4960d90b12bb78ec4885f58cfe7c3685ed76d53d",
+    "HINDUNILVR.csv": "b1471a23dc5910cc300c3c75972acca4fbe3979bc66e60bf66599566179367fc",
+    "ICICIBANK.csv": "9f3a23fda7d638436d2b1590a66ca8bc3d4d4abffbf11cc310ba85a2176b631d",
+    "INDUSINDBK.csv": "5ceb7385231d94eb43628115d163f7da6eafc82bfab3c825daf32f8ab2dc4dc9",
+    "INFRATEL.csv": "3756854c21599a81e6369682702ef3e9d829b69e057ae286de6a6bfe3c98a6af",
+    "INFY.csv": "86877bd016bcf0b621d98f7b14714f08966bc54608b6f44b2f7598641961d619",
+    "IOC.csv": "890c773f401cfa9ae2aabff7099c54765707e2eda395a62d80c8e4d8189921fe",
+    "ITC.csv": "d8780f7f42c3d70f45c97c237340ca558c6af291e4e2bd6362fe6b48980367ad",
+    "JSWSTEEL.csv": "fe7791dac892213c5d39e6aca99af804e27dc971abf0472767bb490d874be91c",
+    "KOTAKBANK.csv": "f5b4b54d4caf8af8c60fed59718e9b7a99ca54fcd12274f8aa96558525f81f96",
+    "LT.csv": "b823e21554a5cd82097aab18c1f7a95ed26f45e588ad8269ed48e8b02d7c2656",
+    "MARUTI.csv": "c82662dd195927495cdb783d47c5f27febdb08e35cc593dfe735cc8930c6da12",
+    "MM.csv": "24ffd7b5932c7545768e398f3e2c87562df5fbe1a7ccf3e9482f198213b407f6",
+    "NESTLEIND.csv": "756141d092e19f88f302bbc4d95dc61ada95d292c0bc32b279ab4437d4758adc",
+    "NTPC.csv": "38ab99d7852fafebc318422bee03a3e4a625c46ddcf84fdabc7c3e64db466ce4",
+    "ONGC.csv": "dd5b9525b45c647a14567b06859a41c1d2b4c3ec5d912e4033900e8a25bab1b8",
+    "POWERGRID.csv": "95e18697ef0df192fe1d75a3f114f3fea2a239521f541eeba759d9d94bb453f1",
+    "RELIANCE.csv": "f473910bc5ba4075eb0a3f478b3fc912839f30282ebe1ec704e8a67423ee74e0",
+    "SBIN.csv": "63cafefaba8637d0ad0ed6bb724024a5993c47ef8183f6300a022a33dd2e904b",
+    "SHREECEM.csv": "716099327e99be4d91e8f5d93ca19035f54fe7f543eb496433dab76535d82877",
+    "SUNPHARMA.csv": "d489538e0f6bcfac9e6f21328bbbee4e2a6ef7ed8c2719168d787dd4447bb6b0",
+    "TATAMOTORS.csv": "0c128ed4b886302df13ca0f5521fb59932337233ad5dfa1f486f2f3c2e8ef672",
+    "TATASTEEL.csv": "faff2b8e00548040e705d939d06125126679b98a4fc301c4e8d5134e097f77f4",
+    "TCS.csv": "0e014ba688c759656ca3ca53da942d51c90395e88a626d4fb9ee123be22c5d8e",
+    "TECHM.csv": "f3450fa6d570bb44f65974c0be3c23808c9c61b5117bf804787e5924e4968f5a",
+    "TITAN.csv": "368925a538c241bcae3875877267c89c4dab75c00fa0d1a39ffe1aa2146c666e",
+    "ULTRACEMCO.csv": "a9ed3d6ccd7e07f324afdf462edc768daafd6d45bf37f5545853edac5329946e",
+    "UPL.csv": "76ae29669d1420c9931b0611330e171d48704bcce343c9ab9fee13b145ffebe3",
+    "VEDL.csv": "ce8333676d83890e2ddba969425d5a9dc8887cd6a967e7af11ece6734ba153ba",
+    "WIPRO.csv": "67f367198ddabb66da46ac0e282919a4d8ec3372030d62627d561252e4fb547c",
+    "ZEEL.csv": "8e397f56db0e7425f01881ac4dc2524b40fa34aed3c259ff7377e4e6a6da77bb",
+    "stock_metadata.csv": "79b88e0a16bc69e4f91e63e88a9e50d36b483dc922519498bd3ddef2b69b1477"
+  },
+  "sessions_sha256": "c6aff5057d8534afd57e2110b6c9b10a8549b7bad8845a1ca7e9d78f5d51ff81",
+  "sessions_hash_format": "sha256 of sorted-key JSON, independent of file line endings"
+}

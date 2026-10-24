@@ -92,3 +92,18 @@ of its net daily equity returns, including cash days. The export links the origi
 backtest request hash, strategy, stock, evaluation dates and costs. A threshold
 control estimates conditional drawdown exceedance. Existing costs are not charged
 again. Stock scenarios use the stock's returns instead and remain separately labelled.
+
+## Research controls and comparisons
+
+Open **Data health & feature warm-up** to review missing/invalid sessions and,
+where available, **Use latest complete window**. Earlier feature history is kept;
+it is excluded from the selected evaluation and stock-scenario calibration.
+In Chart & indicators, calculate price structure to enable synchronized RSI/MACD
+panels. After a backtest, its fill markers are available on the same chart.
+
+**Challenge these rules in Validation** preserves submitted settings. Performance
+also contains benchmark/sector context and the experiment journal. The linked risk
+tab offers seven calibration/block/cost sensitivity cases after a simulation.
+Overview contains descriptive historical rating evaluation. Backtest results offer
+a frozen final-period policy for windows of at least 100 observations; read the
+[protocol and limitations](RESEARCH_PROTOCOL.md) before interpreting it as untouched.
