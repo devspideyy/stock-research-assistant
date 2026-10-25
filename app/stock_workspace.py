@@ -3,13 +3,13 @@
 import streamlit as st
 from app.research_protocol import visible_candles
 from app.evaluation_ui import source_health, experiment_context, rating_panel
+from app.workspace import go_stock_section
 
 from app.ui_helpers import number, percent, price_chart, render_assessment
 
 
 def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
     candles = visible_candles(dataset)
-    st.caption("THE EQUITY LEDGER  /  STOCK RESEARCH")
     st.title(dataset.get("name", dataset["symbol"]))
     st.caption(
         f"NSE · {dataset['symbol']} · {candles[0]['timestamp']} — {candles[-1]['timestamp']} · "
@@ -21,6 +21,12 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
             list(panels),
             default="Overview",
             key="stock_section",
+            format_func=lambda section: {
+                "Chart & indicators": "Charts",
+                "Strategies & backtest": "Backtest",
+                "Risk / Monte Carlo": "Monte Carlo",
+                "Evidence & reports": "Evidence",
+            }.get(section, section),
             width="stretch",
         )
         or "Overview"
@@ -51,7 +57,7 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
     with desk:
         with st.container(border=True):
             st.caption("RESEARCH NOTE")
-            st.subheader("Read. Test. Challenge.")
+            st.subheader("Your research desk")
             st.write(
                 "Inspect the stock's record, test a fixed rule, then examine how fragile its returns may be."
             )
@@ -61,9 +67,19 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
                         on_assess()
                 except (RuntimeError, ValueError, OSError) as exc:
                     st.error(str(exc))
-            st.caption(
-                "01  Chart & indicators\n\n02  Strategies & backtest\n\n03  Validation\n\n04  Evidence & assistant"
+            st.button(
+                "Test a strategy",
+                on_click=go_stock_section,
+                args=("Strategies & backtest",),
+                width="stretch",
             )
+            st.button(
+                "Explore Monte Carlo",
+                on_click=go_stock_section,
+                args=("Risk / Monte Carlo",),
+                width="stretch",
+            )
+            st.caption("01 Inspect the record · 02 Backtest a rule · 03 Explore risk")
         st.caption("News connector · Pending\n\nDerivatives / Level 2–3 · Deferred")
     evidence = st.session_state.get("evidence")
     if evidence:

@@ -78,6 +78,33 @@ available histories. See [recommendation rules and the next research steps](docs
 for score weights, strategy definitions, replay limits and the remaining validation work.
 Scores are heuristic evidence points, not probabilities; demo/history cards are not current recommendations.
 
+## Backtest and risk workflow
+
+Choose the stock and research dates in the sidebar. Open **Backtest**, choose a
+rule and submit **Run strategy comparison**. Buy-and-hold is included automatically.
+The first result shows ending investment, net profit/loss, worst historical fall
+and the net-return difference from buy-and-hold. Equity playback, trades and
+advanced statistics are separate views; only the selected view builds its charts.
+Cost and execution assumptions remain editable in the advanced settings.
+
+Open **Monte Carlo** from the section bar or **Risk / Monte Carlo** in the sidebar.
+**Backtested strategy** uses the selected rule's submitted net returns, including
+cash days and costs. **Stock price scenarios** works directly from stock returns.
+These are different conditional experiments. Animation is optional in both flows.
+Calibration dates and observation counts stay visible alongside strategy risk.
+
+**Save complete experiment** stores the source price snapshot, settings, complete
+backtest results and any linked strategy simulation in the local SQLite database.
+Use **Saved research → Reopen complete experiment** to restore them after a restart.
+The saved source is clearly labelled; select Historical library to start a new run.
+Changing the data source, stock or date window clears active results with an
+explanation, while saved experiments remain available.
+
+The UI caches deterministic native requests by prices, all submitted options and
+the engine executable hash. Local history cache entries also track file versions
+and the pinned manifest. These bounded in-memory caches clear on restart; saved
+experiments persist independently. No broker or model key is needed for this flow.
+
 ## Use Antigravity IDE
 
 Open this folder in **Antigravity IDE** through **File > Open Folder**. Start with `engine/src/engine.cpp` for the C++ calculations and `app/dashboard.py` for the interface.

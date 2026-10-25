@@ -59,25 +59,26 @@ def source_health(dataset: dict) -> None:
         st.caption(
             "The session reference is a frozen observed-market proxy. It does not certify listing identity, suspensions, action completeness or exchange holidays."
         )
-        if not report["eligible"] and dataset.get("history_quality"):
-            if (
-                len(
-                    [
-                        c
-                        for c in dataset["candles"]
-                        if c["timestamp"][:10]
-                        > max(
-                            report["omitted_invalid"]
-                            + report["missing_reference_sessions"]
-                            + [g["before"] for g in report["long_gaps"]]
-                        )
-                    ]
-                )
-                >= 30
-            ):
-                st.button(
-                    "Use latest complete window", on_click=use_complete_window, args=(dataset,)
-                )
+    if not report["eligible"] and dataset.get("history_quality"):
+        st.info(
+            "This window crosses missing or invalid sessions. Use a complete window for backtests and daily-return risk studies."
+        )
+        if (
+            len(
+                [
+                    c
+                    for c in dataset["candles"]
+                    if c["timestamp"][:10]
+                    > max(
+                        report["omitted_invalid"]
+                        + report["missing_reference_sessions"]
+                        + [g["before"] for g in report["long_gaps"]]
+                    )
+                ]
+            )
+            >= 30
+        ):
+            st.button("Use latest complete window", on_click=use_complete_window, args=(dataset,))
 
 
 def experiment_context() -> None:

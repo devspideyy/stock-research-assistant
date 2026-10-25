@@ -26,7 +26,8 @@ import pandas as pd
 import streamlit as st
 
 from app import history, storage, indicators
-from app.evaluation_ui import final_protocol_panel, benchmark_panel, journal_panel
+from app.computation import calculate, load_history
+from app.backtest_view import backtest_results, risk_workspace
 from app.research_protocol import (
     select_window,
     visible_candles,
@@ -41,12 +42,10 @@ from app.assessment import STRATEGIES
 from app.chat import answer_question
 from app.demo import SYMBOLS, load_demo, load_accounting_demo
 from app.experiment_ui import (
-    accounting_view,
     cost_controls,
     cost_model_selector,
     data_readiness,
     validation_lab,
-    import_backtest_for_validation,
 )
 from app.engine_bridge import (
     EngineClient,
@@ -56,13 +55,11 @@ from app.engine_bridge import (
 )
 from app.monitor import run_once
 from app.stock_workspace import stock_workspace
-from app.strategy_risk import strategy_risk
 from app.recommendations import stock_ideas, strategy_guide
 from app.research_labs import indicator_lab, stock_catalogue
 from app.services import build_evidence, generate_report
 from app.ui_helpers import (
     candle_frame,
-    equity_charts,
     json_download,
     number,
     percent,
@@ -74,7 +71,6 @@ from app.ui_helpers import (
     show_items,
     simulation_chart,
     terminal_distribution,
-    trade_chart,
 )
 from app.workspace import (
     go_page,
@@ -83,6 +79,7 @@ from app.workspace import (
     sidebar_navigation,
     sidebar_workspace,
 )
+from app.style import apply_style
 
 
 st.set_page_config(
@@ -110,13 +107,17 @@ RESULT_KEYS = (
     "sector_context",
     "rating_evaluation",
     "risk_sensitivity",
+    "strategy_risk_input",
+    "active_strategy",
+    "backtest_phase",
+    "backtest_run_id",
 )
 
 
 def engine_request(operation: str, *args, **kwargs) -> dict | None:
     try:
         with st.spinner("Running the C++ engine…"):
-            return getattr(EngineClient(), operation)(*args, **kwargs)
+            return calculate(operation, *args, **kwargs)
     except EngineUnavailable as exc:
         st.error(str(exc))
         st.caption("Compile the engine with the setup instructions in README.md, then retry.")
@@ -176,7 +177,8 @@ def select_dataset() -> dict | None:
                 if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") == "1"
                 else []
             )
-            + ["Historical library", "Upload historical CSV"],
+            + ["Historical library", "Upload historical CSV"]
+            + (["Saved experiment"] if st.session_state.get("active_snapshot") else []),
             key="data_source",
         )
         if source == "Historical library":
@@ -196,7 +198,7 @@ def select_dataset() -> dict | None:
                     key="historical_stock",
                 )
                 try:
-                    dataset = history.load_stock(symbol)
+                    dataset = load_history(symbol)
                 except (OSError, ValueError, KeyError) as exc:
                     st.error(str(exc))
                     return None
@@ -248,6 +250,13 @@ def select_dataset() -> dict | None:
                         st.error(str(exc))
             if not ready:
                 return None
+        elif source == "Saved experiment":
+            snapshot = st.session_state.active_snapshot
+            dataset = snapshot["dataset"]
+            st.caption(
+                f"Saved {snapshot['created_at'][:19]} UTC · {dataset['symbol']} · "
+                "Original price snapshot. Select Historical library to start a new experiment."
+            )
         elif source == "Synthetic demo":
             symbol = st.selectbox(
                 "Demonstration instrument",
@@ -348,6 +357,7 @@ def select_dataset() -> dict | None:
         fingerprint = hashlib.sha256(
             json.dumps(
                 {
+                    "source": source,
                     "symbol": dataset["symbol"],
                     "candles": dataset["candles"],
                     "synthetic": dataset["is_synthetic"],
@@ -365,9 +375,28 @@ def select_dataset() -> dict | None:
             ).encode()
         ).hexdigest()
         if st.session_state.get("dataset_fingerprint") != fingerprint:
+            had_results = bool(st.session_state.get("backtests"))
             for key in RESULT_KEYS:
                 st.session_state.pop(key, None)
             st.session_state.dataset_fingerprint = fingerprint
+            if had_results and not st.session_state.get("restore_snapshot"):
+                st.session_state.experiment_notice = (
+                    "Prices, dates or source details changed. Run a new backtest for this window; "
+                    "complete experiments already saved remain in Saved research."
+                )
+        if source == "Saved experiment" and st.session_state.pop("restore_snapshot", False):
+            st.session_state.update(
+                backtests=snapshot["results"],
+                experiment_settings=snapshot["settings"],
+                backtest_dataset=snapshot.get("backtest_dataset", dataset),
+                backtest_phase=snapshot.get("phase", "saved experiment"),
+                backtest_run_id=snapshot.get("run_id"),
+                active_strategy=snapshot.get("active_strategy"),
+                strategy_risk_input=snapshot.get("strategy_risk_input"),
+            )
+            if snapshot.get("strategy_simulation"):
+                st.session_state.strategy_simulation = snapshot["strategy_simulation"]
+            st.session_state.pop("experiment_notice", None)
         return dataset
 
 
@@ -674,7 +703,9 @@ def backtest_lab(dataset: dict) -> None:
     if not daily_experiment_ready(dataset):
         return
     data_readiness(dataset)
-    model = cost_model_selector("backtest_cost_model", dataset)
+    with st.expander("Cost basis"):
+        model = cost_model_selector("backtest_cost_model", dataset)
+    defaults = st.session_state.get("experiment_settings", {})
     with (
         st.expander(
             "Strategy & execution settings", expanded=not bool(st.session_state.get("backtests"))
@@ -682,50 +713,92 @@ def backtest_lab(dataset: dict) -> None:
         st.form("backtest_form"),
     ):
         selection = st.multiselect(
-            "Strategies to compare", list(STRATEGIES), default=list(STRATEGIES)
+            "Strategies to compare",
+            list(STRATEGIES),
+            default=list(st.session_state.get("backtests", {"Price + volume": {}})),
+            help="Buy and hold is always included as an equally costed benchmark.",
         )
+        st.caption("Buy and hold is included automatically for comparison.")
         evaluation = st.selectbox(
-            "Evaluation window", ["Last 30% chronological holdout", "Full history (exploratory)"]
+            "Evaluation window",
+            ["Last 30% chronological holdout", "Full history (exploratory)"],
+            index=1
+            if defaults and defaults.get("evaluation_start") == dataset.get("window_start", 0)
+            else 0,
         )
         st.caption(
             "Holdout starts in cash; prior bars warm up features only. Rules are fixed hypotheses. Tuning after viewing the holdout invalidates its untouched status."
         )
         a, b, c = st.columns(3)
-        capital = a.number_input("Starting capital", min_value=1000.0, value=100000.0, step=10000.0)
-        lookback = b.number_input("Price structure lookback", min_value=2, max_value=200, value=20)
+        capital = a.number_input(
+            "Starting capital",
+            min_value=1000.0,
+            value=float(defaults.get("initial_capital", 100000)),
+            step=10000.0,
+        )
+        lookback = b.number_input(
+            "Price structure lookback",
+            min_value=2,
+            max_value=200,
+            value=defaults.get("lookback", 20),
+        )
         volume = c.number_input(
-            "Breakout relative-volume threshold", min_value=0.1, max_value=10.0, value=1.2, step=0.1
-        )
-        costs = cost_controls(model, "backtest")
-        liquidity = st.number_input(
-            "Prior-day volume participation cap (%) · raw prices only",
-            0.0,
-            10.0,
-            0.0,
+            "Breakout relative-volume threshold",
+            min_value=0.1,
+            max_value=10.0,
+            value=float(defaults.get("volume_threshold", 1.2)),
             step=0.1,
-            disabled=dataset.get("price_basis") != "raw",
         )
-        allow_gaps = st.checkbox("Allow reported data gaps for this exploratory run", value=False)
-        raw_reviewed = st.checkbox(
-            "I reviewed raw-price identity and corporate-action coverage for this window",
-            disabled=dataset.get("price_basis") != "raw",
-        )
-        st.caption(
-            "Adjusted data uses fractional research units. Whole-share replay needs raw prices and reviewed corporate actions; hypothetical costs are not broker invoices."
-        )
-        b, c = st.columns(2)
-        slippage = b.number_input(
-            "Slippage per side (bps)", min_value=0.0, max_value=500.0, value=5.0
-        )
-        stop = c.number_input("Stop-loss distance (%)", min_value=1.0, max_value=99.0, value=8.0)
-        exposure = st.slider("Capital exposure cap at entry (%)", 10, 100, 100, step=5)
-        st.caption(
-            "A stop price is not a guaranteed execution price. Submitted costs and action inputs are retained in the export."
-        )
+        with st.expander("Advanced execution & data assumptions"):
+            costs = cost_controls(model, "backtest", defaults)
+            liquidity = st.number_input(
+                "Prior-day volume participation cap (%) · raw prices only",
+                0.0,
+                10.0,
+                float(defaults.get("max_volume_participation", 0) * 100),
+                step=0.1,
+                disabled=dataset.get("price_basis") != "raw",
+            )
+            allow_gaps = st.checkbox(
+                "Allow reported data gaps for this exploratory run",
+                value=defaults.get("allow_data_gaps", False),
+            )
+            raw_reviewed = st.checkbox(
+                "I reviewed raw-price identity and corporate-action coverage for this window",
+                value=defaults.get("raw_reviewed", False),
+                disabled=dataset.get("price_basis") != "raw",
+            )
+            st.caption(
+                "Adjusted data uses fractional research units. Whole-share replay needs raw prices and reviewed corporate actions; hypothetical costs are not broker invoices."
+            )
+            b, c = st.columns(2)
+            slippage = b.number_input(
+                "Slippage per side (bps)",
+                min_value=0.0,
+                max_value=500.0,
+                value=float(defaults.get("slippage_bps", 5)),
+            )
+            stop = c.number_input(
+                "Stop-loss distance (%)",
+                min_value=1.0,
+                max_value=99.0,
+                value=float(defaults.get("stop_loss_pct", 0.08) * 100),
+            )
+            exposure = st.slider(
+                "Capital exposure cap at entry (%)",
+                10,
+                100,
+                int(defaults.get("max_exposure", 1) * 100),
+                step=5,
+            )
+            st.caption(
+                "A stop price is not a guaranteed execution price. Submitted costs and action inputs are retained in the export."
+            )
         run = st.form_submit_button(
             "Run strategy comparison", type="primary", disabled=not selection
         )
     if run:
+        selection = list(dict.fromkeys([*selection, "Buy and hold"]))
         st.session_state.pop("backtests", None)
         st.session_state.pop("experiment_settings", None)
         st.session_state.pop("sector_context", None)
@@ -769,17 +842,25 @@ def backtest_lab(dataset: dict) -> None:
         except ValueError as exc:
             st.error(str(exc))
             return
-        for label in selection:
+        progress = st.progress(0, text=f"Preparing {len(selection)} strategies…")
+        for index, label in enumerate(selection):
+            progress.progress(
+                index / len(selection), text=f"Calculating {label} ({index + 1}/{len(selection)})…"
+            )
             strategy = STRATEGIES[label]
             result = engine_request("backtest", effective["candles"], strategy=strategy, **options)
             if result is None:
                 break
             results[label] = result
+        progress.empty()
         if len(results) == len(selection):
             st.session_state.backtests = results
             st.session_state.experiment_settings = options
             st.session_state.backtest_dataset = effective
             st.session_state.backtest_phase = phase
+            for key in ["strategy_simulation", "strategy_risk_input", "risk_sensitivity"]:
+                st.session_state.pop(key, None)
+            st.session_state.active_strategy = selection[0]
             st.session_state.backtest_run_id = safe_storage(
                 record_run,
                 "backtest",
@@ -799,95 +880,7 @@ def backtest_lab(dataset: dict) -> None:
             "Submit the form to create a reproducible comparison. No strategy has been run yet."
         )
         return
-    st.caption("Showing the last submitted experiment. Change settings and run again to update it.")
-    st.caption("Run scope: " + st.session_state.get("backtest_phase", "exploratory"))
-    final_protocol_panel(dataset, results, st.session_state.get("experiment_settings", {}))
-    with st.container(horizontal=True, gap="small"):
-        for label, result in results.items():
-            st.metric(
-                label,
-                percent(result.get("metrics", {}).get("total_return")),
-                border=True,
-                width="stretch",
-                help="Total return under the submitted assumptions, not a live result.",
-            )
-    rows = []
-    for label, result in results.items():
-        metric = result.get("metrics", {})
-        rows.append(
-            {
-                "Strategy": label,
-                "Total return": percent(metric.get("total_return")),
-                "CAGR (daily assumption)": percent(metric.get("cagr")),
-                "CAGR (elapsed time)": percent(metric.get("calendar_cagr")),
-                "Max drawdown": percent(metric.get("max_drawdown")),
-                "Annualized volatility": percent(metric.get("annualized_volatility")),
-                "Sharpe (assumptions apply)": number(metric.get("sharpe")),
-                "Trade count": metric.get("trade_count"),
-                "Turnover": number(metric.get("turnover")),
-                "Time invested": percent(metric.get("exposure")),
-                "Closed trades": metric.get("closed_trades"),
-                "Win rate (closed trades)": percent(metric.get("win_rate")),
-                "Profit factor": number(metric.get("profit_factor")),
-                "Fees paid": number(metric.get("fees_paid")),
-            }
-        )
-    performance, replay_tab, risk_tab, trades_tab = st.tabs(
-        ["Performance", "Equity replay", "Monte Carlo risk", "Trades & accounting"]
-    )
-    with performance:
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption("Net returns include submitted charges. Open positions remain marked to market.")
-        benchmark_panel(st.session_state.get("backtest_dataset", dataset), results)
-        journal_panel()
-        st.button(
-            "Challenge these rules in Validation",
-            icon=":material/fact_check:",
-            on_click=import_backtest_for_validation,
-        )
-    with replay_tab:
-        replay = st.toggle("Animated backtest replay", value=True)
-        st.caption(
-            "Play / Pause replays a completed run, with up to 300 displayed curve points. Metrics use every bar."
-        )
-        equity, drawdown = equity_charts(results, replay=replay)
-        st.plotly_chart(equity, width="stretch")
-        st.plotly_chart(drawdown, width="stretch")
-    with trades_tab:
-        selected = st.selectbox("Inspect strategy trades", list(results))
-        evaluation = results[selected].get("evaluation", {})
-        st.caption(
-            f"{evaluation.get('start')} → {evaluation.get('end')} · {evaluation.get('bars')} evaluation bars"
-        )
-        accounting_view(results[selected])
-        st.plotly_chart(trade_chart(dataset["candles"], results[selected]), width="stretch")
-        trades = results[selected].get("trades", [])
-        if trades:
-            st.dataframe(pd.DataFrame(trades), hide_index=True, width="stretch")
-        else:
-            st.caption("No executed trades for this run.")
-        with st.expander("Execution assumptions and exact configuration"):
-            st.json(st.session_state.get("experiment_settings", {}), expanded=False)
-            show_items(results[selected].get("assumptions"))
-    with risk_tab:
-        strategy_risk(
-            st.session_state.get("backtest_dataset", dataset),
-            results,
-            st.session_state.get("experiment_settings", {}),
-        )
-    export = {
-        "symbol": dataset["symbol"],
-        "is_synthetic": dataset["is_synthetic"],
-        "data_fingerprint": st.session_state.dataset_fingerprint,
-        "settings": st.session_state.get("experiment_settings", {}),
-        "results": results,
-    }
-    st.download_button(
-        "Download backtest records",
-        json_download(export),
-        file_name=f"{dataset['symbol']}_backtests.json",
-        mime="application/json",
-    )
+    backtest_results(dataset, results, st.session_state.get("experiment_settings", {}))
     with st.expander("Strategy rules, market fit and failure cases"):
         strategy_guide()
 
@@ -967,12 +960,12 @@ def monte_carlo_lab(dataset: dict) -> None:
         "Last submitted simulation. Percentiles summarize this model and these assumptions only."
     )
     summary = result.get("summary", {})
-    cols = st.columns(4)
+    cols = st.container(key="scenario_metrics").columns(4)
     cols[0].metric("5th-percentile terminal value", number(summary.get("p05")))
     cols[1].metric("Median terminal value", number(summary.get("p50")))
     cols[2].metric("95th-percentile terminal value", number(summary.get("p95")))
     cols[3].metric("Simulated probability of loss", percent(summary.get("probability_loss")))
-    replay = st.toggle("Animated scenario replay", value=True)
+    replay = st.toggle("Animated scenario replay", value=False)
     st.caption(
         "Play / Pause reveals simulated paths through time. The band is a conditional percentile range, not a confidence interval for the real future; metrics describe the complete run."
     )
@@ -1323,6 +1316,9 @@ PAGES = {
 
 
 def main() -> None:
+    apply_style()
+    if st.session_state.get("stock_section") == "Stock scenarios":
+        st.session_state.stock_section = "Risk / Monte Carlo"
     st.session_state.setdefault(
         "workspace_page",
         "Overview" if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") == "1" else "Stock workspace",
@@ -1336,9 +1332,11 @@ def main() -> None:
     sidebar_workspace(dataset)
     provider, model = model_controls()
     st.caption("THE EQUITY LEDGER  /  INDIA CASH EQUITIES  /  RESEARCH EDITION")
-    page = st.selectbox(
-        "Workspace", list(PAGES), key="workspace_page", width=230, label_visibility="collapsed"
-    )
+    with st.sidebar.expander("Other research tools"):
+        page = st.selectbox("Workspace", list(PAGES), key="workspace_page")
+    notice = st.session_state.pop("experiment_notice", None)
+    if notice:
+        st.info(notice)
     research_page = page not in {
         "Monitoring",
         "Stock universe",
@@ -1381,7 +1379,7 @@ def main() -> None:
                 "Chart & indicators": lambda: price_liquidity(dataset),
                 "Strategies & backtest": lambda: backtest_lab(dataset),
                 "Validation": lambda: validation_lab(dataset),
-                "Stock scenarios": lambda: monte_carlo_lab(dataset),
+                "Risk / Monte Carlo": lambda: risk_workspace(dataset, monte_carlo_lab),
                 "Evidence & reports": lambda: research_brief(dataset, provider, model),
                 "Assistant": lambda: chatbot(dataset, provider, model),
             },

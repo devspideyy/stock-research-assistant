@@ -6,17 +6,19 @@ import json
 import streamlit as st
 import pandas as pd
 
-from app.engine_bridge import EngineClient
+from app.computation import calculate
 from app.sensitivity import risk_sensitivity
 from app.research_protocol import record_run
 from app.ui_helpers import json_download, number, percent, simulation_chart, terminal_distribution
 
 
-def strategy_risk(dataset: dict, results: dict, settings: dict) -> None:
+def strategy_risk(
+    dataset: dict, results: dict, settings: dict, *, label: str | None = None
+) -> None:
     st.markdown("### Strategy risk, in context")
     st.caption(
-        "Block-bootstrap the selected strategy's net daily equity returns, including cash days. "
-        "This estimates conditional variability; signals are not recalculated on synthetic price paths."
+        "Explore possible investment outcomes from this strategy's historical net returns. "
+        "Cash days and submitted costs are included."
     )
     if settings.get("session_gaps_present"):
         st.warning(
@@ -37,26 +39,46 @@ def strategy_risk(dataset: dict, results: dict, settings: dict) -> None:
         st.session_state.pop("strategy_simulation", None)
         st.session_state.pop("risk_sensitivity", None)
         st.session_state.strategy_risk_input = fingerprint
+    previous = st.session_state.get("strategy_simulation", {})
+    defaults = previous.get("_provenance", {}).get("options", {})
+    if (
+        label
+        and previous.get("strategy_calibration", {}).get("strategy") != results[label]["strategy"]
+    ):
+        defaults = {}
     with st.form("strategy_risk_form"):
         a, b, c = st.columns(3)
-        label = a.selectbox(
-            "Risk strategy",
-            list(results),
-            index=list(results).index("Buy and hold") if "Buy and hold" in results else 0,
+        if label is None:
+            label = a.selectbox("Risk strategy", list(results))
+        else:
+            a.markdown(f"**Strategy**\n\n{label}")
+        horizon = b.number_input(
+            "Risk horizon (daily observations)", 2, 504, defaults.get("horizon", 126)
         )
-        horizon = b.number_input("Risk horizon (daily observations)", 2, 504, 126)
-        paths = c.selectbox("Risk simulation paths", [500, 1000, 5000], index=1)
-        a, b, c = st.columns(3)
-        block = a.number_input("Return block length", 1, 60, 5)
-        seed = b.number_input("Risk seed", 0, 2147483647, 42)
-        loss = c.slider("Drawdown level to inspect (%)", 5, 90, 20, 5)
+        paths = c.selectbox(
+            "Risk simulation paths",
+            [500, 1000, 5000],
+            index=[500, 1000, 5000].index(defaults.get("paths", 1000)),
+        )
+        with st.expander("Advanced simulation settings"):
+            a, b, c = st.columns(3)
+            block = a.number_input("Return block length", 1, 60, defaults.get("block_size", 5))
+            seed = b.number_input("Risk seed", 0, 2147483647, defaults.get("seed", 42))
+            loss = c.slider(
+                "Drawdown level to inspect (%)",
+                5,
+                90,
+                round(defaults.get("drawdown_threshold", 0.2) * 100),
+                5,
+            )
         run = st.form_submit_button("Simulate strategy risk", type="primary")
     if run:
         st.session_state.pop("strategy_simulation", None)
         st.session_state.pop("risk_sensitivity", None)
         try:
             with st.spinner("Resampling net strategy returns in C++…"):
-                result = EngineClient().simulate(
+                result = calculate(
+                    "simulate",
                     dataset["candles"],
                     **settings,
                     strategy=results[label]["strategy"],
@@ -83,18 +105,27 @@ def strategy_risk(dataset: dict, results: dict, settings: dict) -> None:
         st.info("Run a strategy-risk study after submitting the backtest above.")
         return
     calibration = result["strategy_calibration"]
+    if calibration["strategy"] != results[label]["strategy"]:
+        st.info("The displayed strategy changed. Run its risk study to see matching results.")
+        return
     st.caption(
-        f"{result['symbol']} · {calibration['strategy']} · "
+        f"{result['symbol']} · {label} · "
         f"{calibration['evaluation']['start']} → {calibration['evaluation']['end']} · "
         "Last submitted simulation; change inputs and submit to update."
     )
-    a, b, c, d = st.columns(4)
-    a.metric("Median terminal wealth", number(result["summary"]["p50"]), border=True)
+    a, b, c, d = st.container(key="risk_metrics").columns(4)
+    a.metric("Median ending investment", number(result["summary"]["p50"], prefix="₹ "), border=True)
     b.metric(
-        "Conditional terminal loss", percent(result["summary"]["probability_loss"]), border=True
+        "Scenarios ending in loss",
+        percent(result["summary"]["probability_loss"]),
+        border=True,
+        help="Share of simulated paths ending below the starting investment, under these assumptions.",
     )
     c.metric(
-        "95th-percentile drawdown", percent(result["summary"]["max_drawdown_p95"]), border=True
+        "Severe simulated fall",
+        percent(result["summary"]["max_drawdown_p95"]),
+        border=True,
+        help="95th percentile of the largest peak-to-trough fall in each simulated path.",
     )
     threshold = result["_provenance"]["options"]["drawdown_threshold"]
     d.metric(
@@ -106,10 +137,24 @@ def strategy_risk(dataset: dict, results: dict, settings: dict) -> None:
         st.warning(
             "This rule made no fills in calibration. Flat cash simulations do not establish low future strategy risk."
         )
+    observations = result["calibration"]["observations"]
+    st.caption(
+        f"Calibration: {observations} net daily returns · {calibration['metrics']['trade_count']} fills · "
+        "Cash days and costs included. Percentiles are conditional scenarios, not guarantees."
+    )
+    if observations < 252:
+        st.warning(
+            "Less than one trading year of calibration. More simulated paths do not add historical evidence."
+        )
+    replay = st.toggle("Animate Monte Carlo paths", value=False)
     st.plotly_chart(
-        simulation_chart(result, replay=True), width="stretch", key="linked_strategy_paths"
+        simulation_chart(result, replay=replay), width="stretch", key="linked_strategy_paths"
     )
     with st.expander("Terminal distribution and method"):
+        st.caption(
+            "Block bootstrap resamples net daily returns. Entry and exit signals are not "
+            "recalculated on new synthetic stock prices."
+        )
         st.plotly_chart(
             terminal_distribution(result), width="stretch", key="linked_strategy_distribution"
         )

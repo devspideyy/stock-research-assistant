@@ -74,6 +74,11 @@ def watchlist_editor() -> None:
 
 def saved_research() -> None:
     """Browse saved records without replacing the currently selected research data."""
+    from app.backtest_view import saved_experiments
+
+    st.subheader("Your experiments")
+    saved_experiments()
+    st.divider()
     evidence = safe_storage(storage.list_evidence, limit=100, default=[]) or []
     reports = safe_storage(storage.list_reports, limit=100, default=[]) or []
     first, second = st.columns(2)
@@ -165,9 +170,26 @@ def select_history(symbol: str) -> None:
 def sidebar_navigation() -> None:
     st.sidebar.title("Equity")
     st.sidebar.caption("THE RESEARCH LEDGER")
+    st.sidebar.caption("STOCK DESK")
+    for section, label, icon in [
+        ("Overview", "Stock overview", "space_dashboard"),
+        ("Chart & indicators", "Charts & indicators", "candlestick_chart"),
+        ("Strategies & backtest", "Strategy backtest", "query_stats"),
+        ("Risk / Monte Carlo", "Risk / Monte Carlo", "ssid_chart"),
+    ]:
+        st.sidebar.button(
+            label,
+            icon=f":material/{icon}:",
+            width="stretch",
+            type="primary"
+            if st.session_state.get("workspace_page") == "Stock workspace"
+            and st.session_state.get("stock_section", "Overview") == section
+            else "tertiary",
+            on_click=go_stock_section,
+            args=(section,),
+        )
     groups = {
         "RESEARCH": {
-            "Stock workspace": "account_balance",
             "Stock ideas": "analytics",
             "Saved research": "history",
         },
@@ -191,30 +213,25 @@ def sidebar_navigation() -> None:
                 on_click=go_page,
                 args=(page,),
             )
-    labs = {
-        "Overview": "space_dashboard",
-        "Market analysis": "candlestick_chart",
-        "Backtesting": "query_stats",
-        "Validation": "fact_check",
-        "Monte Carlo": "ssid_chart",
-        "Assistant": "forum",
-    }
-    with st.sidebar.expander(
-        "Individual research labs", expanded=st.session_state.get("workspace_page") in labs
-    ):
-        for page, icon in labs.items():
-            st.button(
-                page,
-                key=f"nav_{page}",
-                icon=f":material/{icon}:",
-                width="stretch",
-                on_click=go_page,
-                args=(page,),
-            )
     st.sidebar.divider()
 
 
+def go_stock_section(section: str) -> None:
+    st.session_state.workspace_page = "Stock workspace"
+    st.session_state.stock_section = section
+
+
 def sidebar_workspace(dataset: dict | None) -> None:
+    if dataset:
+        st.sidebar.caption("CURRENT RESEARCH")
+        st.sidebar.markdown(f"**{dataset['symbol']}**")
+        first = dataset["candles"][dataset.get("window_start", 0)]["timestamp"][:10]
+        st.sidebar.caption(f"{first} → {dataset['candles'][-1]['timestamp'][:10]} · Daily")
+        st.sidebar.caption(
+            "Backtest ready · explore risk next"
+            if st.session_state.get("backtests")
+            else "Choose a rule in Strategy backtest to begin."
+        )
     if dataset and st.sidebar.button(
         "Save instrument to watchlist", icon=":material/bookmark_add:", width="stretch"
     ):

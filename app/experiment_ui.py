@@ -35,13 +35,14 @@ def cost_model_selector(key: str, dataset: dict | None = None) -> str:
     return st.selectbox("Cost model", options, key=key)
 
 
-def cost_controls(model: str, key: str) -> dict:
+def cost_controls(model: str, key: str, defaults: dict | None = None) -> dict:
+    defaults = defaults or {}
     if model == "Hypothetical bps":
         commission = st.number_input(
             "Commission / charges per side (bps)",
             min_value=0.0,
             max_value=500.0,
-            value=10.0,
+            value=float(defaults.get("commission_bps", 10)),
             key=key + "_commission",
         )
         st.caption("Editable all-in research assumption; not an exchange or broker fee quote.")

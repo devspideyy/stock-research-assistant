@@ -69,12 +69,13 @@ def test_production_workspace_uses_real_history_and_links_strategy_risk(tmp_path
         "Hypothetical bps"
     ]
     button(app, "Run strategy comparison").click().run()
+    button(app, "Explore Monte Carlo risk").click().run()
     button(app, "Simulate strategy risk").click().run()
     assert not app.exception
     risk = app.session_state["strategy_simulation"]
     assert risk["symbol"] == "TEST" and risk["is_synthetic"] is False
     assert risk["strategy_calibration"]["evaluation"]["end"] == "2020-12-31"
-    assert risk["linked_backtest"] == app.session_state["backtests"]["Buy and hold"]["_provenance"]
+    assert risk["linked_backtest"] == app.session_state["backtests"]["Price + volume"]["_provenance"]
 
 
 def test_validation_button_inherits_submitted_custom_backtest():
@@ -177,7 +178,7 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     navigate(app, "Backtesting")
     button(app, "Run strategy comparison").click().run()
     assert not app.exception
-    assert len(app.session_state["backtests"]) == 5
+    assert set(app.session_state["backtests"]) == {"Price + volume", "Buy and hold"}
     assert all(
         run["evaluation"]["start_index"] == 378 for run in app.session_state["backtests"].values()
     )
@@ -319,7 +320,7 @@ def test_watchlist_and_indicator_presets_survive_new_session(tmp_path, monkeypat
 
     # A new browser session loads persisted settings, rather than the old widget state.
     reopened = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
-    button(reopened, "Market analysis").click().run()
+    navigate(reopened, "Market analysis")
     next(item for item in reopened.selectbox if item.label == "Saved indicator preset").set_value(
         "RSI 21 swing"
     ).run()
