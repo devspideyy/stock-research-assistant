@@ -105,6 +105,24 @@ the engine executable hash. Local history cache entries also track file versions
 and the pinned manifest. These bounded in-memory caches clear on restart; saved
 experiments persist independently. No broker or model key is needed for this flow.
 
+## Optional TradingView chart
+
+Open **Charts → TradingView**, confirm the exchange-qualified ticker (for example
+`NSE:INFY` or `BSE:INFY`) and select **Load TradingView chart**. The hosted chart
+includes TradingView's own chart controls and an initial interval/theme selector.
+It loads only in this view and requires internet access; no API key or paid plan
+is required. Changing the research stock clears the previously loaded external
+chart so it cannot silently retain another stock.
+
+This is an external market view, independent of the historical research window.
+It never supplies prices, indicators or signals to backtests or Monte Carlo.
+TradingView's widget coverage currently lists BSE as end-of-day and does not list
+NSE. An unavailable listing can be opened directly on TradingView using the
+provided link, or explicitly changed to the same company's verified BSE ticker.
+No NSE-to-BSE substitution is performed automatically. See the vendor's
+[coverage table](https://www.tradingview.com/widget-docs/markets/asia-pacific/) and
+[widget data FAQ](https://www.tradingview.com/widget-docs/faq/data/).
+
 ## Use Antigravity IDE
 
 Open this folder in **Antigravity IDE** through **File > Open Folder**. Start with `engine/src/engine.cpp` for the C++ calculations and `app/dashboard.py` for the interface.

@@ -75,7 +75,9 @@ def test_production_workspace_uses_real_history_and_links_strategy_risk(tmp_path
     risk = app.session_state["strategy_simulation"]
     assert risk["symbol"] == "TEST" and risk["is_synthetic"] is False
     assert risk["strategy_calibration"]["evaluation"]["end"] == "2020-12-31"
-    assert risk["linked_backtest"] == app.session_state["backtests"]["Price + volume"]["_provenance"]
+    assert (
+        risk["linked_backtest"] == app.session_state["backtests"]["Price + volume"]["_provenance"]
+    )
 
 
 def test_validation_button_inherits_submitted_custom_backtest():
@@ -237,6 +239,9 @@ def test_indicator_lab_and_stock_search(tmp_path, monkeypatch):
     navigate(app, "Market analysis")
     button(app, "Calculate price structure").click().run()
     assert app.session_state["analysis"]["summary"]
+    next(item for item in app.radio if item.label == "Chart workspace").set_value(
+        "Indicator lab"
+    ).run()
     button(app, "Calculate selected indicator").click().run()
     assert not app.exception
     assert app.session_state["indicator_result"]["function"] == "RSI"
@@ -309,6 +314,9 @@ def test_watchlist_and_indicator_presets_survive_new_session(tmp_path, monkeypat
     assert storage.get_watchlist() == SYMBOLS  # Research bookmarks do not reconfigure the worker.
     button(app, "Explore market analysis").click().run()
     assert app.session_state["workspace_page"] == "Market analysis"
+    next(item for item in app.radio if item.label == "Chart workspace").set_value(
+        "Indicator lab"
+    ).run()
     next(item for item in app.number_input if item.label == "timeperiod").set_value(21)
     button(app, "Calculate selected indicator").click().run()
     next(item for item in app.text_input if item.label == "Preset name").set_value("RSI 21 swing")
@@ -321,6 +329,9 @@ def test_watchlist_and_indicator_presets_survive_new_session(tmp_path, monkeypat
     # A new browser session loads persisted settings, rather than the old widget state.
     reopened = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
     navigate(reopened, "Market analysis")
+    next(item for item in reopened.radio if item.label == "Chart workspace").set_value(
+        "Indicator lab"
+    ).run()
     next(item for item in reopened.selectbox if item.label == "Saved indicator preset").set_value(
         "RSI 21 swing"
     ).run()

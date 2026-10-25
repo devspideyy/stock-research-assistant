@@ -80,6 +80,7 @@ from app.workspace import (
     sidebar_workspace,
 )
 from app.style import apply_style
+from app.tradingview import tradingview_chart
 
 
 st.set_page_config(
@@ -599,14 +600,19 @@ def company_evidence(dataset: dict) -> None:
 
 
 def price_liquidity(dataset: dict) -> None:
-    chart_tab, indicators_tab, data_tab = st.tabs(
-        ["Price & volume", "Indicator lab", "Source data"]
+    view = st.radio(
+        "Chart workspace",
+        ["Historical chart", "TradingView", "Indicator lab", "Source data"],
+        horizontal=True,
+        key="chart_workspace",
     )
-    with chart_tab:
+    if view == "Historical chart":
         price_structure(dataset)
-    with indicators_tab:
+    elif view == "TradingView":
+        tradingview_chart(dataset)
+    elif view == "Indicator lab":
         indicator_lab(dataset)
-    with data_tab:
+    else:
         st.caption(
             "Supplied OHLCV observations · source quality and adjustment basis require review"
         )
