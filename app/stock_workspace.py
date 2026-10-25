@@ -5,7 +5,7 @@ from app.research_protocol import visible_candles
 from app.evaluation_ui import source_health, experiment_context, rating_panel
 from app.workspace import go_stock_section
 
-from app.ui_helpers import number, percent, price_chart, render_assessment
+from app.ui_helpers import number, percent, render_assessment
 
 
 def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
@@ -43,16 +43,18 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
     c.metric("Observations", f"{len(candles):,}", border=True)
     main, desk = st.columns([3, 1], gap="large")
     with main:
-        st.subheader("The price record")
-        range_ = st.segmented_control(
-            "Visible chart range", ["6M", "1Y", "5Y", "All"], default="1Y"
+        st.subheader("The research record")
+        st.write(
+            "Explore this stock's candles, volume, indicators and simulated trade markers in one research chart."
         )
-        count = {"6M": 126, "1Y": 252, "5Y": 1260, "All": len(candles)}[range_ or "1Y"]
-        st.plotly_chart(
-            price_chart(candles[-count:]), width="stretch", config={"displayModeBar": False}
+        st.button(
+            "Open research chart",
+            type="primary",
+            on_click=go_stock_section,
+            args=("Chart & indicators",),
         )
         st.caption(
-            "Chart range changes the view. The research window above controls calculations. Historical prices; no live feed."
+            "The selected source and dates govern every calculation. Historical research through 2020."
         )
     with desk:
         with st.container(border=True):

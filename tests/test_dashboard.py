@@ -53,7 +53,7 @@ def test_production_workspace_uses_real_history_and_links_strategy_risk(tmp_path
         None
     ).run()
     assert not app.exception
-    assert app.get("plotly_chart")  # deselecting the segment still renders Overview
+    assert any(item.label == "Open research chart" for item in app.button)
     from datetime import date
 
     period = app.date_input[0].value
@@ -97,6 +97,11 @@ def test_validation_button_inherits_submitted_custom_backtest():
     ).set_value(50)
     button(app, "Run strategy comparison").click().run()
     submitted = dict(app.session_state["experiment_settings"])
+    button(app, "View entries & exits on research chart").click().run()
+    button(app, "Calculate price structure").click().run()
+    assert not app.exception
+    assert app.session_state["chart_analysis"]["result"]["_provenance"]["options"]["lookback"] == 50
+    button(app, "Configure a strategy backtest").click().run()
     button(app, "Challenge these rules in Validation").click().run()
     assert not app.exception
     assert app.session_state["validation_import"]["settings"] == submitted

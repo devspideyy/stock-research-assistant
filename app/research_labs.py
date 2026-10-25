@@ -11,7 +11,13 @@ import streamlit as st
 
 from app import indicators, instruments, storage
 from app.ui_helpers import chart_layout, number
-from app.workspace import safe_storage, save_watchlist_item
+from app.workspace import safe_storage, save_watchlist_item, go_stock_section
+
+
+def show_indicator_on_chart() -> None:
+    st.session_state.chart_show_library = True
+    st.session_state.chart_workspace = "Research chart"
+    go_stock_section("Chart & indicators")
 
 
 def apply_indicator_preset(preset: dict) -> None:
@@ -176,6 +182,7 @@ def indicator_lab(dataset: dict) -> None:
             else:
                 figure.add_scatter(x=result["timestamps"], y=values, name=label, connectgaps=False)
         st.plotly_chart(chart_layout(figure, height=340), width="stretch")
+        st.button("Show this indicator on research chart", on_click=show_indicator_on_chart)
         if result["domain_gaps"]:
             st.warning(
                 "Some values are outside this function's numeric domain and are shown as missing."

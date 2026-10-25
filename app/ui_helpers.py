@@ -8,7 +8,6 @@ from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
 from app.animations import add_replay
 from app.assessment import STRATEGIES, STRATEGY_GUIDE
@@ -91,105 +90,6 @@ def chart_layout(figure: go.Figure, *, height: int = 440) -> go.Figure:
     figure.update_xaxes(showgrid=False)
     figure.update_yaxes(gridcolor="rgba(140,150,170,0.12)", zeroline=False)
     return figure
-
-
-def price_chart(
-    candles: list[dict],
-    analysis: dict | None = None,
-    overlays: list[str] | None = None,
-    panels: dict | None = None,
-    trades: list[dict] | None = None,
-) -> go.Figure:
-    frame = candle_frame(candles)
-    visible_dates = set(frame.timestamp)
-    fig = make_subplots(
-        rows=2 + len(panels or {}),
-        cols=1,
-        shared_xaxes=True,
-        row_heights=[0.7, 0.3] if not panels else [0.5, 0.15] + [0.175] * len(panels),
-        vertical_spacing=0.035,
-    )
-    fig.add_trace(
-        go.Candlestick(
-            x=frame.timestamp,
-            open=frame.open,
-            high=frame.high,
-            low=frame.low,
-            close=frame.close,
-            name="Price",
-            increasing_line_color=COLORS["positive"],
-            decreasing_line_color=COLORS["negative"],
-        ),
-        row=1,
-        col=1,
-    )
-    series = (analysis or {}).get("series", [])
-    series_frame = pd.DataFrame(series)
-    if "timestamp" in series_frame:
-        series_frame = series_frame[series_frame.timestamp.isin(frame.timestamp)]
-    for index, indicator in enumerate(overlays or []):
-        if indicator in series_frame and "timestamp" in series_frame:
-            fig.add_trace(
-                go.Scatter(
-                    x=series_frame.timestamp,
-                    y=series_frame[indicator],
-                    name=indicator.upper(),
-                    mode="lines",
-                    line=dict(width=1.5, color=[COLORS["accent"], COLORS["secondary"]][index % 2]),
-                ),
-                row=1,
-                col=1,
-            )
-    fig.add_trace(
-        go.Bar(
-            x=frame.timestamp,
-            y=frame.volume,
-            name="Volume",
-            marker_color=COLORS["muted"],
-            opacity=0.6,
-        ),
-        row=2,
-        col=1,
-    )
-    fig.update_xaxes(type="category", nticks=8, rangeslider_visible=False)
-    fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="Volume", row=2, col=1)
-    for row, (name, values) in enumerate((panels or {}).items(), 3):
-        selected = [i for i, stamp in enumerate(values["timestamps"]) if stamp in visible_dates]
-        for label, numbers in values["columns"].items():
-            fig.add_trace(
-                go.Scatter(
-                    x=[values["timestamps"][i] for i in selected],
-                    y=[numbers[i] for i in selected],
-                    name=label,
-                    mode="lines",
-                    line=dict(width=1.3),
-                ),
-                row=row,
-                col=1,
-            )
-        fig.update_yaxes(title_text=name, row=row, col=1)
-        if "RSI" in name:
-            fig.add_hline(y=70, line_dash="dot", line_color=COLORS["muted"], row=row, col=1)
-            fig.add_hline(y=30, line_dash="dot", line_color=COLORS["muted"], row=row, col=1)
-    for side, color, marker in [
-        ("BUY", COLORS["positive"], "triangle-up"),
-        ("SELL", COLORS["negative"], "triangle-down"),
-    ]:
-        fills = [t for t in trades or [] if t["side"] == side and t["timestamp"] in visible_dates]
-        if fills:
-            fig.add_trace(
-                go.Scatter(
-                    x=[t["timestamp"] for t in fills],
-                    y=[t["price"] for t in fills],
-                    mode="markers",
-                    name=side,
-                    marker=dict(color=color, size=9, symbol=marker),
-                ),
-                row=1,
-                col=1,
-            )
-    return chart_layout(fig, height=420 + 140 * len(panels or {}))
 
 
 def depth_chart(bids: list[dict], asks: list[dict]) -> go.Figure:
@@ -295,28 +195,6 @@ def simulation_chart(result: dict, *, replay: bool = False) -> go.Figure:
     )
     fig = chart_layout(fig)
     return add_replay(fig, label="Scenario step") if replay else fig
-
-
-def trade_chart(candles: list[dict], result: dict) -> go.Figure:
-    start = result.get("evaluation", {}).get("start", candles[0]["timestamp"])
-    figure = price_chart([row for row in candles if row["timestamp"] >= start])
-    for side, color, marker in [
-        ("BUY", COLORS["positive"], "triangle-up"),
-        ("SELL", COLORS["negative"], "triangle-down"),
-    ]:
-        trades = [row for row in result.get("trades", []) if row["side"] == side]
-        figure.add_trace(
-            go.Scatter(
-                x=[row["timestamp"] for row in trades],
-                y=[row["price"] for row in trades],
-                mode="markers",
-                name=f"Simulated {side.lower()}",
-                marker=dict(color=color, symbol=marker, size=11),
-            ),
-            row=1,
-            col=1,
-        )
-    return figure
 
 
 def terminal_distribution(result: dict) -> go.Figure:

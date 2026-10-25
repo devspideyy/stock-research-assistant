@@ -191,6 +191,8 @@ def sidebar_navigation() -> None:
     groups = {
         "RESEARCH": {
             "Stock ideas": "analytics",
+            "Quant research": "science",
+            "Paper journal": "receipt_long",
             "Saved research": "history",
         },
         "WORKSPACE": {

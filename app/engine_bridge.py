@@ -180,6 +180,15 @@ class EngineClient:
     def analyze(self, candles: list[dict], **options: Any) -> dict:
         return self._call("analyze", candles=validate_candles(candles), options=options)
 
+    def portfolio(self, curves: list[dict], **options: Any) -> dict:
+        return self._call("portfolio", curves=curves, options=options)
+
+    def diagnostics(self, curves: list[dict], **options: Any) -> dict:
+        return self._call("diagnostics", curves=curves, options=options)
+
+    def paper_fill(self, state: dict, **options: Any) -> dict:
+        return self._call("paper_fill", state=state, options=options)
+
     def backtest(self, candles: list[dict], *, bar_interval: str = "1d", **options: Any) -> dict:
         return self._call(
             "backtest", candles=validate_daily_candles(candles, bar_interval), options=options

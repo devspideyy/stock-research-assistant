@@ -15,7 +15,7 @@ from app.demo import load_demo
 from app.engine_bridge import EngineClient, EngineError
 from app.evaluation import evaluate_ratings, sector_reference
 from app.sensitivity import risk_sensitivity
-from app.ui_helpers import price_chart
+from app.light_chart import chart_payload
 from app.validation import run_validation
 
 
@@ -295,8 +295,8 @@ def test_indicator_panels_and_trade_markers_share_visible_window():
         {"timestamp": stamps[5], "side": "BUY", "price": 100},
         {"timestamp": stamps[45], "side": "SELL", "price": 110},
     ]
-    figure = price_chart(rows[40:], panels=panel, trades=trades)
-    assert list(next(t for t in figure.data if t.name == "RSI").x) == stamps[40:]
-    assert not any(t.name == "BUY" for t in figure.data)
-    assert list(next(t for t in figure.data if t.name == "SELL").x) == [stamps[45]]
-    assert figure.layout.xaxis.matches == "x3"
+    result = chart_payload(rows[40:], panels=panel, trades=trades)
+    assert [r["time"] for r in result["lines"][0]["data"]] == stamps[40:]
+    assert [r["side"] for r in result["fills"]] == ["SELL"]
+    assert [r["time"] for r in result["fills"]] == [stamps[45]]
+    assert result["lines"][0]["pane"] == 2

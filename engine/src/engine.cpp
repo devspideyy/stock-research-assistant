@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "accounting.hpp"
+#include "research.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -626,6 +627,9 @@ json execute(const json& request) {
     require(request.is_object(), "Request must be an object");
     require(request.contains("command") && request.at("command").is_string(), "command is required");
     const std::string command = request.at("command");
+    if (command == "portfolio") return research::portfolio(request);
+    if (command == "diagnostics") return research::diagnostics(request);
+    if (command == "paper_fill") return research::paper_fill(request);
     const json options = request.value("options", json::object());
     require(options.is_object(), "options must be an object");
     json result;

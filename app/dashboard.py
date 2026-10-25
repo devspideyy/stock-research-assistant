@@ -64,7 +64,6 @@ from app.ui_helpers import (
     number,
     percent,
     plain_text,
-    price_chart,
     render_evidence,
     render_report,
     render_assessment,
@@ -81,6 +80,11 @@ from app.workspace import (
 )
 from app.style import apply_style
 from app.tradingview import tradingview_chart
+from app.light_chart import light_chart
+from app.stock_search import stock_search, open_stock
+from app.workspace import go_stock_section as open_stock_section
+from app.quant_workspace import quant_workspace
+from app.paper_journal import paper_journal
 
 
 st.set_page_config(
@@ -112,6 +116,9 @@ RESULT_KEYS = (
     "active_strategy",
     "backtest_phase",
     "backtest_run_id",
+    "parameter_study",
+    "chart_analysis",
+    "chart_show_library",
 )
 
 
@@ -446,19 +453,11 @@ def overview(dataset: dict, provider: str, model: str | None) -> None:
     with chart_column, st.container(border=True):
         st.caption("MARKET CONTEXT")
         st.markdown("### Price & participation")
-        period = st.radio(
-            "Chart range",
-            ["1M", "3M", "6M", "All"],
-            index=2,
-            horizontal=True,
-            label_visibility="collapsed",
+        st.write(
+            "Open the research chart for candles, indicators and simulated fills on the same prices."
         )
-        count = {"1M": 21, "3M": 63, "6M": 126, "All": len(candles)}[period]
-        visible = candles[-count:]
-        st.plotly_chart(price_chart(visible), width="stretch", config={"displayModeBar": False})
-        st.caption(
-            f"{visible[0]['timestamp']} — {visible[-1]['timestamp']} · {len(visible)} supplied bars · Not live"
-        )
+        st.button("Open integrated chart", on_click=go_page, args=("Market analysis",))
+
     with desk_column:
         with st.container(border=True):
             st.caption("RESEARCH DESK")
@@ -600,15 +599,22 @@ def company_evidence(dataset: dict) -> None:
 
 
 def price_liquidity(dataset: dict) -> None:
+    stock_search()
+    old_view = st.session_state.get("chart_workspace")
+    if old_view in {"Historical chart", "TradingView"}:
+        st.session_state.chart_workspace = {
+            "Historical chart": "Research chart",
+            "TradingView": "External market widget",
+        }[old_view]
     view = st.radio(
         "Chart workspace",
-        ["Historical chart", "TradingView", "Indicator lab", "Source data"],
+        ["Research chart", "Indicator lab", "Source data", "External market widget"],
         horizontal=True,
         key="chart_workspace",
     )
-    if view == "Historical chart":
+    if view == "Research chart":
         price_structure(dataset)
-    elif view == "TradingView":
+    elif view == "External market widget":
         tradingview_chart(dataset)
     elif view == "Indicator lab":
         indicator_lab(dataset)
@@ -620,20 +626,53 @@ def price_liquidity(dataset: dict) -> None:
         company_evidence(dataset)
 
 
+def open_backtest_setup() -> None:
+    open_stock_section("Strategies & backtest")
+
+
 def price_structure(dataset: dict) -> None:
     st.markdown("### Price and volume")
     st.caption(
         "Prior ranges, gaps and relative volume lead the analysis. Moving averages and RSI are supporting context."
     )
-    analysis = st.session_state.get("analysis")
-    if not analysis and st.button("Calculate price structure", type="primary"):
-        analysis = engine_request("analyze", dataset["candles"], **market_options(dataset))
+    results = st.session_state.get("backtests", {})
+    marked = "None"
+    if results:
+        labels = ["None", *results]
+        active = st.session_state.get("active_strategy")
+        marked = st.selectbox(
+            "Trade markers on chart", labels, index=labels.index(active) if active in labels else 1
+        )
+    source = st.session_state.get("backtest_dataset", dataset) if marked != "None" else dataset
+    lookback = (
+        st.session_state.get("experiment_settings", {}).get("lookback", 20)
+        if marked != "None"
+        else 20
+    )
+    if marked != "None":
+        st.session_state.active_strategy = marked
+    context = (
+        source["symbol"],
+        len(source["candles"]),
+        source["candles"][-1]["timestamp"],
+        lookback,
+    )
+    stored = st.session_state.get("chart_analysis", {})
+    analysis = stored.get("result") if stored.get("context") == context else None
+    if analysis is None and marked == "None":
+        analysis = st.session_state.get("analysis")
+    if st.button("Calculate price structure", type="primary"):
+        analysis = engine_request(
+            "analyze", source["candles"], lookback=lookback, **market_options(source)
+        )
         if analysis:
-            record_analysis(dataset, analysis)
+            st.session_state.chart_analysis = {"context": context, "result": analysis}
+            if marked == "None":
+                record_analysis(dataset, analysis)
     overlay = st.multiselect(
         "Supporting overlays",
-        ["sma20", "ema20"],
-        format_func=lambda text: text.upper(),
+        ["sma20", "ema20", "prior_high", "prior_low"],
+        default=[],
         disabled=not bool(analysis),
     )
     selected_panels = st.multiselect(
@@ -646,16 +685,24 @@ def price_structure(dataset: dict) -> None:
             "columns": {"RSI 14": [r["rsi14"] for r in analysis["series"]]},
         }
     if "MACD" in selected_panels:
-        result = indicators.calculate(dataset["candles"], "MACD")
-        panels["MACD"] = {"timestamps": result["timestamps"], "columns": result["columns"]}
-    fills = []
-    if st.session_state.get("backtests"):
-        marked = st.selectbox("Trade markers on chart", ["None", *st.session_state.backtests])
-        if marked != "None":
-            fills = st.session_state.backtests[marked]["trades"]
-    st.plotly_chart(
-        price_chart(visible_candles(dataset), analysis, overlay, panels, fills), width="stretch"
+        values = indicators.calculate(source["candles"], "MACD")
+        panels["MACD"] = {"timestamps": values["timestamps"], "columns": values["columns"]}
+    library = st.session_state.get("indicator_result")
+    if library and st.checkbox("Show calculated TA-Lib indicator", key="chart_show_library"):
+        panels[f"TA · {library['function']}"] = {
+            "timestamps": library["timestamps"],
+            "columns": library["columns"],
+            "overlay": indicators.catalogue()[library["function"]]["price_scale"],
+        }
+    fills = results[marked]["trades"] if marked != "None" else []
+    st.caption(
+        f"{source['symbol']} · {visible_candles(source)[0]['timestamp']} → {source['candles'][-1]['timestamp']} · Native backtest fills: {marked} · Historical research prices"
     )
+    light_chart(visible_candles(source), analysis, overlay, panels, fills, symbol=source["symbol"])
+    if fills:
+        with st.expander("Executed fill ledger"):
+            st.dataframe(pd.DataFrame(fills), hide_index=True, width="stretch")
+    st.button("Configure a strategy backtest", on_click=open_backtest_setup)
     if analysis:
         summary = analysis.get("summary", {})
         cols = st.columns(4)
@@ -1316,6 +1363,8 @@ PAGES = {
     "Assistant": "Discuss the evidence and understand your results.",
     "Saved research": "Your saved evidence cards, analyst reports and research watchlist.",
     "Monitoring": "Watchlist observations and worker activity.",
+    "Quant research": "Cross-stock evidence, robustness and portfolio risk.",
+    "Paper journal": "Forward simulated fills and source-linked decisions.",
     "Stock universe": "Discover Indian cash equities across NSE and BSE.",
     "Settings": "Manage connections and understand data availability.",
 }
@@ -1323,6 +1372,9 @@ PAGES = {
 
 def main() -> None:
     apply_style()
+    pending = st.session_state.pop("pending_research_stock", None)
+    if pending:
+        open_stock(pending)
     if st.session_state.get("stock_section") == "Stock scenarios":
         st.session_state.stock_section = "Risk / Monte Carlo"
     st.session_state.setdefault(
@@ -1349,6 +1401,7 @@ def main() -> None:
         "Settings",
         "Saved research",
         "Stock ideas",
+        "Paper journal",
     }
     if page != "Stock workspace":
         with st.container(
@@ -1409,6 +1462,10 @@ def main() -> None:
         chatbot(dataset, provider, model)
     elif page == "Monitoring":
         monitoring()
+    elif page == "Quant research":
+        quant_workspace(dataset)
+    elif page == "Paper journal":
+        paper_journal()
     elif page == "Stock universe":
         stock_catalogue()
     elif page == "Saved research":

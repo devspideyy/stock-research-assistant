@@ -7,7 +7,9 @@ from app import experiments
 from app.evaluation_ui import benchmark_panel, final_protocol_panel, journal_panel
 from app.experiment_ui import accounting_view, import_backtest_for_validation
 from app.strategy_risk import strategy_risk
-from app.ui_helpers import equity_charts, json_download, number, percent, trade_chart
+from app.ui_helpers import equity_charts, json_download, number, percent
+from app.quant_research import benchmark_diagnostics
+from app.quant_workspace import show_diagnostics
 from app.workspace import safe_storage, go_stock_section as go_section
 
 
@@ -22,6 +24,11 @@ def selected_strategy(results: dict) -> str:
     )
     st.session_state.active_strategy = label
     return label
+
+
+def open_backtest_chart() -> None:
+    st.session_state.chart_workspace = "Research chart"
+    go_section("Chart & indicators")
 
 
 def experiment_actions(dataset: dict, results: dict, settings: dict, *, risk_page=False) -> None:
@@ -58,6 +65,9 @@ def experiment_actions(dataset: dict, results: dict, settings: dict, *, risk_pag
         icon=":material/ssid_chart:",
         on_click=go_section,
         args=("Strategies & backtest" if risk_page else "Risk / Monte Carlo",),
+    )
+    st.button(
+        "View entries & exits on research chart", on_click=open_backtest_chart, width="stretch"
     )
 
 
@@ -105,7 +115,7 @@ def backtest_results(dataset: dict, results: dict, settings: dict) -> None:
     experiment_actions(dataset, results, settings)
     view = st.radio(
         "Result view",
-        ["Summary", "Equity & replay", "Trades", "Advanced"],
+        ["Summary", "Equity & replay", "Trades", "Benchmark", "Advanced"],
         horizontal=True,
         key="backtest_result_view",
         label_visibility="collapsed",
@@ -149,14 +159,15 @@ def backtest_results(dataset: dict, results: dict, settings: dict) -> None:
         st.plotly_chart(drawdown, width="stretch")
     elif view == "Trades":
         accounting_view(result)
-        st.plotly_chart(
-            trade_chart(st.session_state.get("backtest_dataset", dataset)["candles"], result),
-            width="stretch",
-        )
         if result.get("trades"):
             st.dataframe(pd.DataFrame(result["trades"]), hide_index=True, width="stretch")
         else:
             st.info("No executed trades for this strategy.")
+    elif view == "Benchmark":
+        if "Buy and hold" in results:
+            show_diagnostics(benchmark_diagnostics(result, results["Buy and hold"]))
+        else:
+            st.info("Run a comparison with buy-and-hold to inspect benchmark exposure.")
     else:
         st.caption("Detailed statistics and audit tools for the submitted experiment.")
         st.dataframe(

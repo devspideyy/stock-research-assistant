@@ -42,9 +42,9 @@ def test_embed_uses_fixed_vendor_and_never_contains_local_research_prices():
 def test_chart_load_is_explicit_and_stock_changes_clear_external_symbol():
     app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
     button(app, "Charts & indicators").click().run()
-    assert not app.get("iframe")
+    assert app.get("iframe")  # bundled research chart; no hosted-widget request
     next(item for item in app.radio if item.label == "Chart workspace").set_value(
-        "TradingView"
+        "External market widget"
     ).run()
     assert not app.exception
     assert not app.get("iframe")

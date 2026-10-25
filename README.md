@@ -105,9 +105,44 @@ the engine executable hash. Local history cache entries also track file versions
 and the pinned manifest. These bounded in-memory caches clear on restart; saved
 experiments persist independently. No broker or model key is needed for this flow.
 
-## Optional TradingView chart
+## Integrated research chart and quant tools
 
-Open **Charts → TradingView**, confirm the exchange-qualified ticker (for example
+**Charts → Research chart** uses locally bundled TradingView Lightweight Charts
+5.2.1. It draws the same supplied candles as the native strategy engine, with
+volume, optional synchronized RSI/MACD panes, supporting overlays and executed
+buy/sell markers. Click a candle to inspect its fills. Normal candle interactions
+stay in the app. Date-range buttons, log scale and marker visibility are local.
+No TradingView login, data subscription or internet connection is needed for this
+research chart after the project is installed.
+
+Use **Find a stock** to search the local public NSE/BSE catalogue by company,
+symbol or ISIN. Each result distinguishes prepared history from an identifier
+without prices. Available pinned pre-2021 histories can be prepared explicitly;
+unsupported listings do not receive invented candles. Today's catalogue is not a
+historical constituent universe. The overview and backtest ledger link to the
+single research chart instead of creating duplicate stock-price views.
+
+**Quant research** adds a same-window stock comparison, nearby-parameter and
+2×/3× cost sensitivity, benchmark diagnostics, and fixed initial long-only
+portfolio allocations with cash and an entry-weight cap. Missing histories are
+reported as exclusions. No optimiser chooses a winning strategy. Save studies
+locally or download their source/settings/results and a concise Markdown report.
+
+**Paper journal** stores hypothetical whole-share fills against fresh read-only
+broker snapshots, including timestamp, slippage, charges, cash and positions.
+Account setup works offline. Fills need a verified current quote; unavailable,
+stale or future-dated quotes are rejected. No broker order endpoint is used.
+The current quote adapter does not generate live strategy signals from candles.
+
+The small HTML/JavaScript chart bridge only renders supplied results. Financial
+strategy, portfolio, benchmark and paper-fill arithmetic stays in C++; Python
+handles data validation, orchestration and SQLite persistence. The vendored
+library's version, integrity hash, Apache license and attribution notice are in
+`app/vendor/`. See [methods and limits](docs/QUANT_WORKFLOW.md).
+
+## Optional external market widget
+
+Open **Charts → External market widget**, confirm the exchange-qualified ticker (for example
 `NSE:INFY` or `BSE:INFY`) and select **Load TradingView chart**. The hosted chart
 includes TradingView's own chart controls and an initial interval/theme selector.
 It loads only in this view and requires internet access; no API key or paid plan
@@ -259,9 +294,8 @@ Repository: [devspideyy/stock-research-assistant](https://github.com/devspideyy/
 
 See the [24 October correctness audit and future research reports](docs/reports/2026-10-24/README.md) for open findings and updated validation status. An intermittent SQLite concurrency failure was observed despite the earlier successful test run.
 
-The workspace uses native Python/Streamlit components: a full sidebar, chart-led
-overview, metric cards, a dark navy theme and teal/gold accents. Data, watchlist
-and connection controls are grouped in the sidebar. Demo/import status remains
-visible on research pages. No JavaScript, HTML or CSS application files or new
-dependencies were added for the redesign. TradingView integration remains a later
-step; current charts use Plotly. Research results persist while navigating sections.
+The workspace uses ivory, forest green and restrained gold, with Python/Streamlit
+controls and an isolated Lightweight Charts view. Plotly remains for equity,
+drawdown, Monte Carlo and research diagnostics. Data, bookmarks and connection
+controls stay in the sidebar. Source and historical status are visible on research
+pages. Complete saved experiments persist independently of browser sessions.
