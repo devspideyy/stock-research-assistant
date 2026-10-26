@@ -395,3 +395,45 @@ def test_simplified_navigation_preserves_assistant_settings_and_both_chart_choic
         next(item for item in app.text_input if item.label == "Installed model name").value
         == "local-test-model"
     )
+
+
+def test_backtest_gap_recovery_uses_complete_prices_without_an_override(monkeypatch):
+    import json
+    import pandas as pd
+    from app import history
+
+    monkeypatch.delenv("STOCK_RESEARCH_TEST_FIXTURES")
+    sessions = json.loads((ROOT / "data/research_sessions.json").read_text())["dates"]
+    dates = [day for day in sessions if "2020-01-01" <= day <= "2020-12-31"]
+    missing_index = int(len(dates) * 0.8)
+    frame = pd.DataFrame(
+        {
+            "Open": 100.0,
+            "High": 102.0,
+            "Low": 99.0,
+            "Close": 101.0,
+            "Adj Close": 101.0,
+            "Volume": 1000.0,
+        },
+        index=pd.DatetimeIndex([day for i, day in enumerate(dates) if i != missing_index]),
+    )
+    path = history.library_path() / "GAP.json"
+    history.write_json(path, history.prepare_frame(frame, "GAP"))
+    original = path.read_bytes()
+    app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
+    navigate(app, "Backtesting")
+    labels = [item.label for item in app.button]
+    assert labels.count("Use latest complete window") == 1
+    assert labels.index("Use latest complete window") < labels.index("Run strategy comparison")
+    button(app, "Run strategy comparison").click().run()
+    assert any("missing or invalid" in item.value for item in app.error)
+    assert "backtests" not in app.session_state
+    button(app, "Use latest complete window").click().run()
+    assert not app.exception
+    assert app.date_input[0].value[0].isoformat() == dates[missing_index + 1]
+    button(app, "Run strategy comparison").click().run()
+    assert not app.exception and not app.error
+    assert set(app.session_state["backtests"]) == {"Price + volume", "Buy and hold"}
+    assert app.session_state["experiment_settings"]["allow_data_gaps"] is False
+    assert app.session_state["experiment_settings"]["session_gaps_present"] is False
+    assert path.read_bytes() == original

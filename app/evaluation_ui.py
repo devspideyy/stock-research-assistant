@@ -33,6 +33,26 @@ def use_complete_window(dataset: dict) -> None:
 
 def source_health(dataset: dict) -> None:
     report = quality_report(dataset)
+    if not report["eligible"] and dataset.get("history_quality"):
+        st.warning(
+            f"Selected history has {len(report['omitted_invalid'])} invalid observations, "
+            f"{len(report['missing_reference_sessions'])} missing reference sessions and "
+            f"{len(report['long_gaps'])} long gaps. These prices are not filled automatically."
+        )
+        try:
+            complete = latest_complete_window(dataset, minimum=30)
+        except ValueError:
+            st.caption(
+                "No complete trailing window of 30 sessions is available. Review the source or choose different dates."
+            )
+        else:
+            first = complete["candles"][complete.get("window_start", 0)]["timestamp"][:10]
+            last = complete["candles"][-1]["timestamp"][:10]
+            count = len(complete["candles"]) - complete.get("window_start", 0)
+            st.caption(
+                f"Complete window available: {first} to {last} / {count} daily observations."
+            )
+            st.button("Use latest complete window", on_click=use_complete_window, args=(dataset,))
     with st.expander("Data quality and price basis"):
         st.caption(
             "Adjusted research units"
@@ -51,26 +71,6 @@ def source_health(dataset: dict) -> None:
         st.caption(
             "The session reference is a frozen observed-market proxy. It does not certify listing identity, suspensions, action completeness or exchange holidays."
         )
-    if not report["eligible"] and dataset.get("history_quality"):
-        st.info(
-            "This window crosses missing or invalid sessions. Use a complete window for backtests and daily-return risk studies."
-        )
-        if (
-            len(
-                [
-                    c
-                    for c in dataset["candles"]
-                    if c["timestamp"][:10]
-                    > max(
-                        report["omitted_invalid"]
-                        + report["missing_reference_sessions"]
-                        + [g["before"] for g in report["long_gaps"]]
-                    )
-                ]
-            )
-            >= 30
-        ):
-            st.button("Use latest complete window", on_click=use_complete_window, args=(dataset,))
 
 
 def experiment_context() -> None:

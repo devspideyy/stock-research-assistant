@@ -55,6 +55,7 @@ from app.engine_bridge import (
 )
 from app.monitor import run_once
 from app.stock_workspace import stock_workspace
+from app.evaluation_ui import source_health
 from app.recommendations import stock_ideas, strategy_guide
 from app.research_labs import indicator_lab, stock_catalogue
 from app.services import build_evidence, generate_report
@@ -649,6 +650,7 @@ def daily_experiment_ready(dataset: dict) -> bool:
 
 def backtest_lab(dataset: dict) -> None:
     st.markdown("### Backtest lab")
+    source_health(dataset)
     if dataset["is_synthetic"]:
         st.warning("Fictional test data; results are illustrative.")
     if not daily_experiment_ready(dataset):

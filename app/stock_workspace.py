@@ -38,7 +38,8 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
     )
     if section != "Overview":
         panels[section]()
-        source_health(dataset)
+        if section != "Strategies & backtest":
+            source_health(dataset)
         experiment_context()
         return
     last = candles[-1]

@@ -42,7 +42,7 @@ def test_quality_requires_review_and_records_gap_override():
     source["is_synthetic"] = False
     missing = source["candles"].pop(110)["timestamp"]
     source["history_quality"] = {"omitted_invalid_dates": [missing]}
-    with pytest.raises(ValueError, match="missing/invalid"):
+    with pytest.raises(ValueError, match="missing or invalid"):
         protocol.require_quality(source, {})
     report = protocol.require_quality(source, {"allow_data_gaps": True})
     assert report["omitted_invalid"] == [missing] and not report["eligible"]

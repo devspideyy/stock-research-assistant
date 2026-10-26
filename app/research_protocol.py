@@ -106,7 +106,7 @@ def require_quality(dataset: dict, options: dict, end: int | None = None) -> dic
         and not options.get("allow_data_gaps", False)
     ):
         raise ValueError(
-            "Evaluation crosses missing/invalid reference sessions or a long gap. Choose a complete window or explicitly record an exploratory gap override."
+            "Evaluated dates contain missing or invalid reference sessions, or a long gap. Select a complete window, or explicitly allow gaps for exploratory research."
         )
     return report
 
