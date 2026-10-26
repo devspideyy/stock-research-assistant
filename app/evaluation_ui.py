@@ -33,20 +33,12 @@ def use_complete_window(dataset: dict) -> None:
 
 def source_health(dataset: dict) -> None:
     report = quality_report(dataset)
-    with st.container(horizontal=True):
-        st.badge(
-            "Complete observed-session window"
-            if report["eligible"]
-            else "Session gaps need review",
-            color="green" if report["eligible"] else "orange",
-        )
-        st.badge(
+    with st.expander("Data quality and price basis"):
+        st.caption(
             "Adjusted research units"
             if dataset.get("price_basis") == "adjusted"
-            else "Raw / source units",
-            color="gray",
+            else "Raw / source units"
         )
-    with st.expander("Data health & feature warm-up"):
         st.caption(
             f"{len(report['omitted_invalid'])} known invalid observations · "
             f"{len(report['missing_reference_sessions'])} missing reference sessions · "

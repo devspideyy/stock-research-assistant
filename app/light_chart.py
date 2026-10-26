@@ -84,4 +84,4 @@ def light_chart(
 ) -> None:
     payload = chart_payload(candles, analysis, overlays, panels, trades, symbol)
     extra_panes = sum(not values.get("overlay", False) for values in (panels or {}).values())
-    components.html(chart_document(payload), height=660 + 150 * extra_panes, scrolling=False)
+    components.html(chart_document(payload), height=610 + 150 * extra_panes, scrolling=False)

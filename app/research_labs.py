@@ -56,15 +56,17 @@ def indicator_lab(dataset: dict) -> None:
         on_click=apply_indicator_preset,
         args=(presets.get(selected, {}),),
     )
-    st.caption(
-        f"{len(catalogue)} TA-Lib functions: trend, momentum, volatility, volume, patterns, "
-        "cycles and statistical/math tools. Calculate a selected function with your own parameters. "
-        "Indicators remain supporting evidence; this lab does not alter strategy rules."
-    )
+    favourites = {"RSI", "MACD", "ATR", "BBANDS", "SMA", "EMA", "OBV", "ADX", "STOCH"}
     groups = sorted({row["group"] for row in catalogue.values()})
-    group = st.selectbox("Indicator family", ["All families", *groups], key="indicator_group")
+    group = st.selectbox(
+        "Indicator family", ["Favourites", "All families", *groups], key="indicator_group"
+    )
     names = [
-        name for name, row in catalogue.items() if group == "All families" or row["group"] == group
+        name
+        for name, row in catalogue.items()
+        if group == "All families"
+        or row["group"] == group
+        or (group == "Favourites" and name in favourites)
     ]
     name = st.selectbox(
         "Indicator function",

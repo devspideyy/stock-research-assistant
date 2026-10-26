@@ -73,7 +73,7 @@ def experiment_actions(dataset: dict, results: dict, settings: dict, *, risk_pag
 
 def backtest_results(dataset: dict, results: dict, settings: dict) -> None:
     st.divider()
-    st.caption("RESULTS / LAST SUBMITTED EXPERIMENT")
+    st.caption("LAST SUBMITTED RESULT")
     label = selected_strategy(results)
     result = results[label]
     metrics = result["metrics"]
@@ -98,11 +98,6 @@ def backtest_results(dataset: dict, results: dict, settings: dict) -> None:
         help="Difference in net return, in percentage points, on the same window.",
     )
     evaluation = result["evaluation"]
-    st.write(
-        f"Starting with **{number(capital, prefix='₹ ')}**, this rule ended at "
-        f"**{number(ending, prefix='₹ ')}** after the submitted costs. "
-        f"Its largest fall from an earlier portfolio peak was **{percent(metrics['max_drawdown'])}**."
-    )
     st.caption(
         f"{dataset['symbol']} · {evaluation['start']} → {evaluation['end']} · "
         f"{evaluation['bars']} evaluated daily bars · {metrics['trade_count']} fills · "
@@ -204,7 +199,6 @@ def backtest_results(dataset: dict, results: dict, settings: dict) -> None:
 
 def risk_workspace(dataset: dict, stock_scenarios) -> None:
     st.subheader("Monte Carlo")
-    st.caption("Explore a range of conditional outcomes for this stock or a submitted strategy.")
     focus = st.radio(
         "Simulation focus",
         ["Backtested strategy", "Stock price scenarios"],

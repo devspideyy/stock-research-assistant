@@ -212,30 +212,29 @@ def terminal_distribution(result: dict) -> go.Figure:
 
 
 def render_evidence(evidence: dict) -> None:
-    st.caption(f"Evidence as of {evidence.get('as_of', evidence.get('created_at', 'unavailable'))}")
-    st.write(f"**Horizon:** {evidence.get('horizon', 'Research horizon not supplied')}")
-    action = evidence.get("action") or evidence.get("decision")
-    if action:
-        st.info(f"Research stance: {plain_text(action)}")
+    st.caption(f"As of {evidence.get('as_of', evidence.get('created_at', 'unavailable'))}")
+    if evidence.get("assessment"):
+        render_assessment(evidence)
+    else:
+        action = evidence.get("action") or evidence.get("decision")
+        if action:
+            st.info(f"Research stance: {plain_text(action)}")
+    support = evidence.get("supporting", evidence.get("supporting_evidence"))
+    opposing = evidence.get("opposing", evidence.get("opposing_evidence"))
     left, right = st.columns(2)
-    with left:
-        st.markdown("#### Supporting evidence")
-        show_items(evidence.get("supporting", evidence.get("supporting_evidence")))
-        st.markdown("#### Missing information")
-        show_items(
-            evidence.get("missing", evidence.get("missing_data")), "No missing fields listed."
-        )
-    with right:
-        st.markdown("#### Opposing evidence")
-        show_items(evidence.get("opposing", evidence.get("opposing_evidence")))
-        st.markdown("#### Invalidation conditions")
-        show_items(
-            evidence.get(
-                "invalidations",
-                evidence.get("invalidation", evidence.get("invalidation_conditions")),
-            )
-        )
-    with st.expander("Inspect the complete evidence record"):
+    if support:
+        with left:
+            st.markdown("#### Supporting evidence")
+            show_items(support)
+    if opposing:
+        with right:
+            st.markdown("#### Opposing evidence")
+            show_items(opposing)
+    if not evidence.get("assessment"):
+        with st.expander("Missing evidence and invalidation"):
+            show_items(evidence.get("missing", evidence.get("missing_data")))
+            show_items(evidence.get("invalidations", evidence.get("invalidation")))
+    with st.expander("Complete evidence record"):
         st.json(evidence, expanded=False)
 
 
@@ -247,7 +246,7 @@ def render_report(report: dict) -> None:
     roles = report.get("roles") or report.get("agents") or report.get("analysts")
     if isinstance(roles, Mapping):
         for name, content in roles.items():
-            with st.expander(str(name).replace("_", " ").title(), expanded=True):
+            with st.expander(str(name).replace("_", " ").title(), expanded=False):
                 if isinstance(content, Mapping) and content.get("text"):
                     st.write(content["text"])
                     if content.get("citations"):
@@ -294,16 +293,10 @@ def render_assessment(card: dict) -> None:
         columns[0].metric("Bullish evidence / 100", assessment["bullish"])
         columns[1].metric("Bearish evidence / 100", assessment["bearish"])
         columns[2].metric("Scorable factor weight / 100", assessment["coverage"])
-        st.caption(
-            "Fixed heuristic points—not a probability of profit or an independently validated stock rating. Opposing cases can both have support."
-        )
+        st.caption("Heuristic scores, not probabilities of profit.")
         if card["data_quality"].get("synthetic") or card["data_quality"].get("historical"):
-            st.warning(
-                "This assessment describes demo/history only. It cannot be used as a current stock recommendation."
-            )
-        st.caption(
-            f"Research gate: {card['action']} · Long-only cash research; no automated orders."
-        )
+            st.warning("Historical assessment; not a current recommendation.")
+        st.caption(f"Evidence gate: {card['action']}")
         with st.expander("Why this rating? Inspect every factor"):
             st.dataframe(pd.DataFrame(assessment["factors"]), hide_index=True, width="stretch")
             show_items(assessment["limitations"])

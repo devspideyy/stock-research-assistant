@@ -23,6 +23,10 @@ def apply_style() -> None:
       h1 {font-size: 2rem !important;}
       [data-testid="stMetric"] {padding: .7rem;}
       [data-testid="stSegmentedControl"] button {padding: .35rem .5rem;}
+      .st-key-overview_metrics [data-testid="stHorizontalBlock"] {display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem;}
+      .st-key-overview_metrics [data-testid="stColumn"] {width: 100% !important; min-width: 0 !important;}
+      .st-key-overview_actions [data-testid="stHorizontalBlock"] {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem;}
+      .st-key-overview_actions [data-testid="stColumn"] {width: 100% !important; min-width: 0 !important;}
       :is(.st-key-backtest_metrics, .st-key-risk_metrics, .st-key-scenario_metrics)
         [data-testid="stHorizontalBlock"] {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem;}
       :is(.st-key-backtest_metrics, .st-key-risk_metrics, .st-key-scenario_metrics)

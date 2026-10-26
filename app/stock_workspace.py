@@ -10,10 +10,14 @@ from app.ui_helpers import number, percent, render_assessment
 
 def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
     candles = visible_candles(dataset)
-    st.title(dataset.get("name", dataset["symbol"]))
+    title, status = st.columns([4, 1], vertical_alignment="center")
+    title.title(dataset.get("name", dataset["symbol"]))
+    status.badge(
+        "Demo" if dataset["is_synthetic"] else "Historical",
+        color="orange" if dataset["is_synthetic"] else "gray",
+    )
     st.caption(
-        f"NSE · {dataset['symbol']} · {candles[0]['timestamp']} — {candles[-1]['timestamp']} · "
-        "Daily history · Prices and results belong to this selected stock and window."
+        f"NSE / {dataset['symbol']} / {candles[0]['timestamp'][:10]} - {candles[-1]['timestamp'][:10]}"
     )
     section = (
         st.segmented_control(
@@ -28,61 +32,46 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
                 "Evidence & reports": "Evidence",
             }.get(section, section),
             width="stretch",
+            label_visibility="collapsed",
         )
         or "Overview"
     )
-    source_health(dataset)
-    experiment_context()
     if section != "Overview":
-        panels[section or "Overview"]()
+        panels[section]()
+        source_health(dataset)
+        experiment_context()
         return
     last = candles[-1]
-    a, b, c = st.columns(3)
-    a.metric("Historical close · research units", number(last["close"], prefix="₹ "), border=True)
-    b.metric("Last daily change", percent(last["close"] / candles[-2]["close"] - 1), border=True)
-    c.metric("Observations", f"{len(candles):,}", border=True)
-    main, desk = st.columns([3, 1], gap="large")
-    with main:
-        st.subheader("The research record")
-        st.write(
-            "Explore this stock's candles, volume, indicators and simulated trade markers in one research chart."
-        )
-        st.button(
-            "Open research chart",
-            type="primary",
-            on_click=go_stock_section,
-            args=("Chart & indicators",),
-        )
-        st.caption(
-            "The selected source and dates govern every calculation. Historical research through 2020."
-        )
-    with desk:
-        with st.container(border=True):
-            st.caption("RESEARCH NOTE")
-            st.subheader("Your research desk")
-            st.write(
-                "Inspect the stock's record, test a fixed rule, then examine how fragile its returns may be."
-            )
-            if st.button("Assess this stock", type="primary", disabled=on_assess is None):
-                try:
-                    with st.spinner("Building the historical price-evidence case…"):
-                        on_assess()
-                except (RuntimeError, ValueError, OSError) as exc:
-                    st.error(str(exc))
-            st.button(
-                "Test a strategy",
-                on_click=go_stock_section,
-                args=("Strategies & backtest",),
-                width="stretch",
-            )
-            st.button(
-                "Explore Monte Carlo",
-                on_click=go_stock_section,
-                args=("Risk / Monte Carlo",),
-                width="stretch",
-            )
-            st.caption("01 Inspect the record · 02 Backtest a rule · 03 Explore risk")
-        st.caption("News connector · Pending\n\nDerivatives / Level 2–3 · Deferred")
+    a, b, c = st.container(key="overview_metrics").columns(3)
+    a.metric("Historical close", number(last["close"], prefix="₹ "), border=True)
+    b.metric("Daily change", percent(last["close"] / candles[-2]["close"] - 1), border=True)
+    c.metric("Sessions", f"{len(candles):,}", border=True)
+    actions = st.container(key="overview_actions").columns(4)
+    actions[0].button(
+        "Open research chart",
+        type="primary",
+        on_click=go_stock_section,
+        args=("Chart & indicators",),
+        width="stretch",
+    )
+    actions[1].button(
+        "Test a strategy",
+        on_click=go_stock_section,
+        args=("Strategies & backtest",),
+        width="stretch",
+    )
+    actions[2].button(
+        "Explore Monte Carlo",
+        on_click=go_stock_section,
+        args=("Risk / Monte Carlo",),
+        width="stretch",
+    )
+    if actions[3].button("Assess this stock", disabled=on_assess is None, width="stretch"):
+        try:
+            with st.spinner("Assessing price evidence..."):
+                on_assess()
+        except (RuntimeError, ValueError, OSError) as exc:
+            st.error(str(exc))
     evidence = st.session_state.get("evidence")
     if evidence:
         case = evidence.get("assessment", {})
@@ -91,16 +80,9 @@ def stock_workspace(dataset: dict, panels: dict, on_assess=None) -> None:
             expanded=True,
         ):
             render_assessment(evidence)
-    rating_panel(dataset)
-    quality = dataset.get("history_quality", {})
-    with st.expander("Historical sources & data quality"):
+    source_health(dataset)
+    experiment_context()
+    with st.expander("Research methods and sources"):
+        rating_panel(dataset)
         st.write(dataset["description"])
-        if quality:
-            st.caption(
-                f"[Price source]({quality.get('source', '')}) · Revision {quality.get('revision', 'unrecorded')[:12]}"
-            )
-            st.json(quality, expanded=False)
-        else:
-            st.caption(
-                "User-supplied history. Inspect the source and corporate-action convention before interpreting results."
-            )
+        st.json(dataset.get("history_quality", {}), expanded=False)

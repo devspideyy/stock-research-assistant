@@ -13,6 +13,14 @@ flowchart LR
     D --> F[Benchmark and portfolio analysis]
 ```
 
+## Workspace
+
+Stock desk tabs keep every selected-stock tool in context. Charts offers both
+Research chart (local Lightweight Charts) and TradingView widget (hosted data).
+Indicators and source data are separate chart choices. Saved research contains
+experiments, comparison studies, validation studies, evidence and reports.
+Assistant provider selection lives in Settings and survives navigation.
+
 ## Chart and stock search
 
 The bundled library is TradingView Lightweight Charts 5.2.1, Apache 2.0. The

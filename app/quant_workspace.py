@@ -26,10 +26,11 @@ def show_diagnostics(result: dict) -> None:
     a.metric("Beta to supplied benchmark", number(result.get("beta")), border=True)
     b.metric("Return correlation", number(result.get("correlation")), border=True)
     c.metric("Tracking error / year", percent(result.get("tracking_error")), border=True)
-    st.caption(result["assumptions"])
-    st.caption(
-        "Undefined statistics for flat returns remain unavailable. Buy-and-hold of the same stock is not a broad market index."
-    )
+    with st.expander("Benchmark method"):
+        st.caption(result["assumptions"])
+        st.caption(
+            "Flat-return statistics are unavailable. Stock buy-and-hold is not a market index."
+        )
 
 
 def comparison_lab(dataset: dict) -> None:
@@ -131,7 +132,8 @@ def comparison_lab(dataset: dict) -> None:
     row = st.selectbox("Inspect comparison stock", study["rows"], format_func=lambda r: r["symbol"])
     if st.button("Calculate benchmark exposure"):
         show_diagnostics(benchmark_diagnostics(row["run"], row["benchmark"]))
-    st.caption(study["method"])
+    with st.expander("Study method"):
+        st.caption(study["method"])
     st.download_button(
         "Download research report",
         research_report(study),
@@ -225,7 +227,8 @@ def robustness_lab(dataset: dict) -> None:
     )
     fig.update_layout(xaxis_title="Structure lookback", yaxis_title="Relative-volume threshold")
     st.plotly_chart(chart_layout(fig, height=300), width="stretch")
-    st.caption(study["method"])
+    with st.expander("Study method"):
+        st.caption(study["method"])
     st.download_button(
         "Export parameter sensitivity", json_download(study), "parameter_sensitivity.json"
     )
@@ -291,41 +294,51 @@ def portfolio_lab() -> None:
         "Correlation of net strategy sleeve returns. Flat-return correlations are unavailable, rather than zero."
     )
     show_diagnostics(result["diagnostics"])
-    st.caption(current["assumptions"])
+    with st.expander("Portfolio assumptions"):
+        st.caption(current["assumptions"])
     st.download_button("Export portfolio study", json_download(result), "portfolio_research.json")
 
 
-def quant_workspace(dataset: dict) -> None:
-    st.write(
-        "Compare fixed rules, challenge assumptions and examine portfolio risk using the local C++ engine."
+def load_saved_quant(study: dict) -> None:
+    from app.workspace import go_page
+
+    st.session_state.cohort_study = study
+    st.session_state.pop("portfolio_study", None)
+    st.session_state.quant_view = "Portfolio"
+    go_page("Quant research")
+
+
+def saved_quant_studies() -> None:
+    items = safe_storage(storage.get_setting, "quant_studies", default=[]) or []
+    if not items:
+        st.info("No saved comparisons yet.")
+        return
+    study = st.selectbox(
+        "Saved quant study",
+        items,
+        format_func=lambda s: (
+            f"{s['strategy']} / {s['start']} - {s['end']} / {len(s['rows'])} stocks"
+        ),
     )
+    st.button(
+        "Use saved comparison for portfolio research", on_click=load_saved_quant, args=(study,)
+    )
+    st.download_button(
+        "Download saved research report", research_report(study), "saved_quant_report.md"
+    )
+
+
+def quant_workspace(dataset: dict) -> None:
     section = st.radio(
         "Quant research view",
-        ["Stock comparison", "Robustness", "Portfolio", "Saved studies"],
+        ["Stock comparison", "Robustness", "Portfolio"],
         horizontal=True,
+        key="quant_view",
+        label_visibility="collapsed",
     )
     if section == "Stock comparison":
         comparison_lab(dataset)
     elif section == "Robustness":
         robustness_lab(dataset)
-    elif section == "Portfolio":
-        portfolio_lab()
     else:
-        items = safe_storage(storage.get_setting, "quant_studies", default=[]) or []
-        if not items:
-            st.info("Save a comparison study to reopen it here. The latest 10 are retained.")
-        else:
-            study = st.selectbox(
-                "Saved quant study",
-                items,
-                format_func=lambda s: (
-                    f"{s['strategy']} · {s['start']} → {s['end']} · {len(s['rows'])} stocks"
-                ),
-            )
-            if st.button("Use saved comparison for portfolio research"):
-                st.session_state.cohort_study = study
-                st.session_state.pop("portfolio_study", None)
-                st.success("Loaded. Open Portfolio to choose allocations.")
-            st.download_button(
-                "Download saved research report", research_report(study), "saved_quant_report.md"
-            )
+        portfolio_lab()

@@ -105,9 +105,17 @@ the engine executable hash. Local history cache entries also track file versions
 and the pinned manifest. These bounded in-memory caches clear on restart; saved
 experiments persist independently. No broker or model key is needed for this flow.
 
+## Workspace navigation
+
+Use **Stock desk** for the selected stock's Overview, Charts, Backtest, Validation,
+Monte Carlo, Evidence and Assistant tabs. **Settings** contains assistant and
+connection configuration. **Saved research** groups experiments, comparison and
+validation studies, evidence cards, reports and the research watchlist. Detailed
+methods and raw records are available in expandable sections.
+
 ## Integrated research chart and quant tools
 
-**Charts → Research chart** uses locally bundled TradingView Lightweight Charts
+**Stock desk → Charts → Research chart** uses locally bundled TradingView Lightweight Charts
 5.2.1. It draws the same supplied candles as the native strategy engine, with
 volume, optional synchronized RSI/MACD panes, supporting overlays and executed
 buy/sell markers. Click a candle to inspect its fills. Normal candle interactions
@@ -142,7 +150,7 @@ library's version, integrity hash, Apache license and attribution notice are in
 
 ## Optional external market widget
 
-Open **Charts → External market widget**, confirm the exchange-qualified ticker (for example
+Open **Stock desk → Charts → TradingView widget**, confirm the exchange-qualified ticker (for example
 `NSE:INFY` or `BSE:INFY`) and select **Load TradingView chart**. The hosted chart
 includes TradingView's own chart controls and an initial interval/theme selector.
 It loads only in this view and requires internet access; no API key or paid plan

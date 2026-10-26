@@ -66,13 +66,11 @@ from app.ui_helpers import (
     plain_text,
     render_evidence,
     render_report,
-    render_assessment,
     show_items,
     simulation_chart,
     terminal_distribution,
 )
 from app.workspace import (
-    go_page,
     safe_storage,
     saved_research,
     sidebar_navigation,
@@ -136,11 +134,14 @@ def engine_request(operation: str, *args, **kwargs) -> dict | None:
 
 
 def model_controls() -> tuple[str, str | None]:
-    with st.sidebar.expander("Assistant settings", expanded=False):
+    with st.expander("Assistant settings", expanded=True):
         label = st.selectbox(
             "Analysis provider",
             ["Rules · no model required", "OpenRouter · free routes only", "Ollama · local model"],
             key="provider_label",
+            index=["rules", "openrouter", "ollama"].index(
+                st.session_state.get("assistant_selection", ("rules", None))[0]
+            ),
         )
         provider = {
             "Rules · no model required": "rules",
@@ -151,7 +152,9 @@ def model_controls() -> tuple[str, str | None]:
         if provider == "openrouter":
             model = st.text_input(
                 "Free model ID",
-                value=os.getenv("OPENROUTER_MODEL", "openrouter/free"),
+                value=st.session_state.get("assistant_selection", (None, None))[1]
+                if st.session_state.get("assistant_selection", (None, None))[0] == "openrouter"
+                else os.getenv("OPENROUTER_MODEL", "openrouter/free"),
                 help="Only the free router or a currently verified :free model is allowed.",
             )
             st.caption(
@@ -167,7 +170,10 @@ def model_controls() -> tuple[str, str | None]:
                 )
         elif provider == "ollama":
             model = st.text_input(
-                "Installed model name", value=os.getenv("OLLAMA_MODEL", "qwen3:4b")
+                "Installed model name",
+                value=st.session_state.get("assistant_selection", (None, None))[1]
+                if st.session_state.get("assistant_selection", (None, None))[0] == "ollama"
+                else os.getenv("OLLAMA_MODEL", "qwen3:4b"),
             )
             st.caption("Requires a running local Ollama server; GPU optional.")
         else:
@@ -233,7 +239,7 @@ def select_dataset() -> dict | None:
                     st.info("Choose at least 30 daily observations.")
                     return None
                 dataset["decision_time"] = dataset["candles"][-1]["timestamp"] + "T15:30:00+05:30"
-                st.caption("Real daily history · hard cutoff 31 Dec 2020 · no live prices")
+                st.caption("History available through 31 Dec 2020")
             with st.expander("Add another historical stock"):
                 listing = history.catalogue()
                 st.caption(
@@ -408,103 +414,6 @@ def select_dataset() -> dict | None:
         return dataset
 
 
-def overview(dataset: dict, provider: str, model: str | None) -> None:
-    candles = dataset["candles"]
-    last = candles[-1]
-    change = float(last["close"]) / float(candles[-2]["close"]) - 1
-    with st.container(horizontal=True, gap="small"):
-        st.metric(
-            "Sample close" if dataset["is_synthetic"] else "Historical close",
-            number(last["close"]),
-            delta=percent(change) + " vs prior bar",
-            border=True,
-            width="stretch",
-        )
-        st.metric("Price bars", f"{len(candles):,}", border=True, width="stretch")
-        volume = last["volume"]
-        st.metric(
-            "Latest volume",
-            f"{volume / 1_000_000:.2f}M" if volume >= 1_000_000 else number(volume, 0),
-            border=True,
-            width="stretch",
-        )
-        st.metric(
-            "Evidence facts",
-            len(st.session_state.get("evidence", {}).get("facts", [])),
-            border=True,
-            width="stretch",
-            help="Build a research brief below to assemble dated facts.",
-        )
-    data_readiness(dataset)
-    if st.button("Assess selected stock", type="primary", icon=":material/analytics:"):
-        analysis = engine_request("analyze", candles, **market_options(dataset))
-        if analysis:
-            record_analysis(dataset, analysis)
-            st.rerun()
-    evidence = st.session_state.get("evidence")
-    if evidence:
-        case = evidence.get("assessment", {})
-        with st.expander(
-            f"Stock recommendation · {case.get('stance', 'Unassessed')} · Bull {number(case.get('bullish'), 0)} / Bear {number(case.get('bearish'), 0)}",
-            expanded=True,
-        ):
-            render_assessment(evidence)
-    chart_column, desk_column = st.columns([2.4, 1], gap="medium")
-    with chart_column, st.container(border=True):
-        st.caption("MARKET CONTEXT")
-        st.markdown("### Price & participation")
-        st.write(
-            "Open the research chart for candles, indicators and simulated fills on the same prices."
-        )
-        st.button("Open integrated chart", on_click=go_page, args=("Market analysis",))
-
-    with desk_column:
-        with st.container(border=True):
-            st.caption("RESEARCH DESK")
-            st.markdown("### Your next move")
-            st.caption("Explore the data, test an idea, then challenge the result.")
-            for label, target, icon in [
-                ("Explore market analysis", "Market analysis", "candlestick_chart"),
-                ("Compare strategies", "Backtesting", "query_stats"),
-                ("Challenge strategy robustness", "Validation", "fact_check"),
-                ("Explore risk scenarios", "Monte Carlo", "ssid_chart"),
-                ("Ask the assistant", "Assistant", "forum"),
-            ]:
-                st.button(
-                    label,
-                    icon=f":material/{icon}:",
-                    width="stretch",
-                    on_click=go_page,
-                    args=(target,),
-                )
-        with st.container(border=True):
-            st.caption("YOUR WORKSPACE")
-            reports = safe_storage(storage.list_reports, limit=3, default=[]) or []
-            st.markdown("**Recent research**")
-            if reports:
-                for report in reports:
-                    st.caption(
-                        f"{report['evidence']['symbol']} · {report['generated_at'][:10]} · {report['provider']}"
-                    )
-            else:
-                st.caption("No reports saved yet. Build an evidence card below to begin.")
-            st.button(
-                "Open saved research",
-                icon=":material/history:",
-                width="stretch",
-                on_click=go_page,
-                args=("Saved research",),
-            )
-    st.caption(
-        "Research prices and volume follow the supplied source. Demo events are fictional; no live connection is implied."
-    )
-    brief, sources = st.tabs(["Research brief", "News & company evidence"])
-    with brief:
-        research_brief(dataset, provider, model)
-    with sources:
-        company_evidence(dataset)
-
-
 def record_analysis(dataset: dict, analysis: dict) -> None:
     evidence = build_evidence(
         dataset["candles"],
@@ -527,7 +436,6 @@ def record_analysis(dataset: dict, analysis: dict) -> None:
 def research_brief(dataset: dict, provider: str, model: str | None) -> None:
     candles = dataset["candles"]
     st.markdown("### Research brief")
-    st.caption("Build an evidence card, then review a source-grounded analyst report.")
     if st.button("Build evidence card", type="primary", width="content"):
         analysis = engine_request("analyze", candles, **market_options(dataset))
         if analysis is not None:
@@ -550,9 +458,6 @@ def research_brief(dataset: dict, provider: str, model: str | None) -> None:
         )
     st.divider()
     st.markdown("### Analyst discussion")
-    st.caption(
-        "News analyst → technical analyst → reviewer. Their claims must refer to the same evidence record."
-    )
     if st.button("Generate analyst report", disabled=not bool(evidence)):
         try:
             with st.spinner("Preparing the analyst report…"):
@@ -599,7 +504,6 @@ def company_evidence(dataset: dict) -> None:
 
 
 def price_liquidity(dataset: dict) -> None:
-    stock_search()
     old_view = st.session_state.get("chart_workspace")
     if old_view in {"Historical chart", "TradingView"}:
         st.session_state.chart_workspace = {
@@ -608,9 +512,11 @@ def price_liquidity(dataset: dict) -> None:
         }[old_view]
     view = st.radio(
         "Chart workspace",
-        ["Research chart", "Indicator lab", "Source data", "External market widget"],
+        ["Research chart", "External market widget", "Indicator lab", "Source data"],
         horizontal=True,
         key="chart_workspace",
+        format_func=lambda name: "TradingView widget" if name == "External market widget" else name,
+        label_visibility="collapsed",
     )
     if view == "Research chart":
         price_structure(dataset)
@@ -625,16 +531,14 @@ def price_liquidity(dataset: dict) -> None:
         st.dataframe(candle_frame(dataset["candles"]), hide_index=True, width="stretch")
         company_evidence(dataset)
 
+    stock_search()
+
 
 def open_backtest_setup() -> None:
     open_stock_section("Strategies & backtest")
 
 
 def price_structure(dataset: dict) -> None:
-    st.markdown("### Price and volume")
-    st.caption(
-        "Prior ranges, gaps and relative volume lead the analysis. Moving averages and RSI are supporting context."
-    )
     results = st.session_state.get("backtests", {})
     marked = "None"
     if results:
@@ -661,23 +565,24 @@ def price_structure(dataset: dict) -> None:
     analysis = stored.get("result") if stored.get("context") == context else None
     if analysis is None and marked == "None":
         analysis = st.session_state.get("analysis")
-    if st.button("Calculate price structure", type="primary"):
-        analysis = engine_request(
-            "analyze", source["candles"], lookback=lookback, **market_options(source)
+    with st.expander("Indicators and overlays"):
+        if st.button("Calculate price structure", type="primary"):
+            analysis = engine_request(
+                "analyze", source["candles"], lookback=lookback, **market_options(source)
+            )
+            if analysis:
+                st.session_state.chart_analysis = {"context": context, "result": analysis}
+                if marked == "None":
+                    record_analysis(dataset, analysis)
+        overlay = st.multiselect(
+            "Supporting overlays",
+            ["sma20", "ema20", "prior_high", "prior_low"],
+            default=[],
+            disabled=not bool(analysis),
         )
-        if analysis:
-            st.session_state.chart_analysis = {"context": context, "result": analysis}
-            if marked == "None":
-                record_analysis(dataset, analysis)
-    overlay = st.multiselect(
-        "Supporting overlays",
-        ["sma20", "ema20", "prior_high", "prior_low"],
-        default=[],
-        disabled=not bool(analysis),
-    )
-    selected_panels = st.multiselect(
-        "Synchronized indicator panels", ["RSI 14", "MACD"], disabled=not bool(analysis)
-    )
+        selected_panels = st.multiselect(
+            "Synchronized indicator panels", ["RSI 14", "MACD"], disabled=not bool(analysis)
+        )
     panels = {}
     if analysis and "RSI 14" in selected_panels:
         panels["RSI 14"] = {
@@ -695,9 +600,10 @@ def price_structure(dataset: dict) -> None:
             "overlay": indicators.catalogue()[library["function"]]["price_scale"],
         }
     fills = results[marked]["trades"] if marked != "None" else []
-    st.caption(
-        f"{source['symbol']} · {visible_candles(source)[0]['timestamp']} → {source['candles'][-1]['timestamp']} · Native backtest fills: {marked} · Historical research prices"
-    )
+    if marked != "None":
+        st.caption(
+            f"Submitted fills / {marked} / {visible_candles(source)[0]['timestamp'][:10]} - {source['candles'][-1]['timestamp'][:10]}"
+        )
     light_chart(visible_candles(source), analysis, overlay, panels, fills, symbol=source["symbol"])
     if fills:
         with st.expander("Executed fill ledger"):
@@ -726,9 +632,7 @@ def price_structure(dataset: dict) -> None:
                 width="stretch",
             )
     else:
-        st.caption(
-            "Calculate price structure above to add prior ranges, volume context and overlays."
-        )
+        st.caption("Add indicators using Indicators and overlays.")
 
 
 def daily_experiment_ready(dataset: dict) -> bool:
@@ -745,14 +649,8 @@ def daily_experiment_ready(dataset: dict) -> bool:
 
 def backtest_lab(dataset: dict) -> None:
     st.markdown("### Backtest lab")
-    st.write(
-        "Compare a price/volume rule, a simple indicator baseline and buy-and-hold on the same observations."
-    )
-    st.caption(
-        "Synthetic experiment only: returns below cannot establish an investment strategy's effectiveness."
-        if dataset["is_synthetic"]
-        else "Historical results depend on source quality, corporate actions, universe selection and execution assumptions."
-    )
+    if dataset["is_synthetic"]:
+        st.warning("Fictional test data; results are illustrative.")
     if not daily_experiment_ready(dataset):
         return
     data_readiness(dataset)
@@ -771,7 +669,6 @@ def backtest_lab(dataset: dict) -> None:
             default=list(st.session_state.get("backtests", {"Price + volume": {}})),
             help="Buy and hold is always included as an equally costed benchmark.",
         )
-        st.caption("Buy and hold is included automatically for comparison.")
         evaluation = st.selectbox(
             "Evaluation window",
             ["Last 30% chronological holdout", "Full history (exploratory)"],
@@ -1269,7 +1166,9 @@ def monitoring() -> None:
 
 
 def settings(provider: str, model: str | None) -> None:
-    st.markdown("### Connections and project boundaries")
+    provider, model = model_controls()
+    st.session_state.assistant_selection = (provider, model)
+    st.markdown("### Connections")
     st.dataframe(
         pd.DataFrame(
             [
@@ -1353,20 +1252,14 @@ def settings(provider: str, model: str | None) -> None:
 
 
 PAGES = {
-    "Stock workspace": "One stock, one window, connected research and risk analysis.",
-    "Overview": "A clear view of your research, evidence and next decisions.",
-    "Market analysis": "Inspect price structure and volume, then add supporting indicators.",
-    "Stock ideas": "Compare explainable bullish and bearish research cases from available histories.",
-    "Backtesting": "Compare strategies under the same execution assumptions.",
-    "Validation": "Challenge fixed rules across chronological periods and higher costs.",
-    "Monte Carlo": "Explore a range of conditional outcomes.",
-    "Assistant": "Discuss the evidence and understand your results.",
-    "Saved research": "Your saved evidence cards, analyst reports and research watchlist.",
+    "Stock workspace": "",
+    "Stock ideas": "Price-based research cases from available histories.",
+    "Quant research": "Stock comparisons, robustness and portfolio risk.",
+    "Paper journal": "Simulated trades using fresh quotes.",
+    "Saved research": "Experiments, studies, evidence and reports.",
+    "Stock universe": "Search NSE and BSE listings.",
     "Monitoring": "Watchlist observations and worker activity.",
-    "Quant research": "Cross-stock evidence, robustness and portfolio risk.",
-    "Paper journal": "Forward simulated fills and source-linked decisions.",
-    "Stock universe": "Discover Indian cash equities across NSE and BSE.",
-    "Settings": "Manage connections and understand data availability.",
+    "Settings": "Connections and data settings.",
 }
 
 
@@ -1377,10 +1270,7 @@ def main() -> None:
         open_stock(pending)
     if st.session_state.get("stock_section") == "Stock scenarios":
         st.session_state.stock_section = "Risk / Monte Carlo"
-    st.session_state.setdefault(
-        "workspace_page",
-        "Overview" if os.getenv("STOCK_RESEARCH_TEST_FIXTURES") == "1" else "Stock workspace",
-    )
+    st.session_state.setdefault("workspace_page", "Stock workspace")
     sidebar_navigation()
     dataset = select_dataset()
     if dataset is None:
@@ -1388,10 +1278,10 @@ def main() -> None:
             if key != "idea_cards":
                 st.session_state.pop(key, None)
     sidebar_workspace(dataset)
-    provider, model = model_controls()
-    st.caption("THE EQUITY LEDGER  /  INDIA CASH EQUITIES  /  RESEARCH EDITION")
-    with st.sidebar.expander("Other research tools"):
-        page = st.selectbox("Workspace", list(PAGES), key="workspace_page")
+    provider, model = st.session_state.get("assistant_selection", ("rules", None))
+    page = st.session_state.workspace_page
+    if page not in PAGES:
+        page = st.session_state.workspace_page = "Stock workspace"
     notice = st.session_state.pop("experiment_notice", None)
     if notice:
         st.info(notice)
@@ -1446,20 +1336,8 @@ def main() -> None:
                 dataset, EngineClient().analyze(dataset["candles"], **market_options(dataset))
             ),
         )
-    elif page == "Overview":
-        overview(dataset, provider, model)
-    elif page == "Market analysis":
-        price_liquidity(dataset)
     elif page == "Stock ideas":
         stock_ideas(dataset)
-    elif page == "Backtesting":
-        backtest_lab(dataset)
-    elif page == "Monte Carlo":
-        monte_carlo_lab(dataset)
-    elif page == "Validation":
-        validation_lab(dataset)
-    elif page == "Assistant":
-        chatbot(dataset, provider, model)
     elif page == "Monitoring":
         monitoring()
     elif page == "Quant research":
@@ -1472,10 +1350,6 @@ def main() -> None:
         saved_research()
     else:
         settings(provider, model)
-    st.divider()
-    st.caption(
-        "Equity · Research edition     /     India cash equities     /     Results depend on supplied data and assumptions"
-    )
 
 
 if __name__ == "__main__":

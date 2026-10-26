@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
-import os
 
 import pandas as pd
 import streamlit as st
 
 from app import storage
 from app.demo import SYMBOLS
-from app.ui_helpers import json_download, render_evidence, render_report, render_assessment
+from app.ui_helpers import json_download, render_evidence, render_report
 
 
 def safe_storage(callable_, *args, default=None, **kwargs):
@@ -76,26 +75,30 @@ def saved_research() -> None:
     """Browse saved records without replacing the currently selected research data."""
     from app.backtest_view import saved_experiments
 
-    st.subheader("Your experiments")
-    saved_experiments()
-    st.divider()
+    from app.quant_workspace import saved_quant_studies
+    from app.experiment_ui import saved_validation_studies
+
     evidence = safe_storage(storage.list_evidence, limit=100, default=[]) or []
     reports = safe_storage(storage.list_reports, limit=100, default=[]) or []
-    first, second = st.columns(2)
-    first.metric("Recent evidence cards", len(evidence), border=True)
-    second.metric("Recent analyst reports", len(reports), border=True)
-    st.caption(
-        "Most recent 100 records of each kind. Snapshots retain their original data labels and timestamps."
+    experiments_tab, studies_tab, cards_tab, reports_tab, watchlist_tab = st.tabs(
+        ["Experiments", "Studies", "Evidence cards", "Analyst reports", "Research watchlist"]
     )
+    with experiments_tab:
+        saved_experiments()
+    with studies_tab:
+        kind = st.radio("Study type", ["Stock comparison", "Validation"], horizontal=True)
+        if kind == "Stock comparison":
+            saved_quant_studies()
+        else:
+            saved_validation_studies()
     symbols = sorted(
         {card.get("symbol", "Unknown") for card in evidence}
         | {report.get("evidence", {}).get("symbol", "Unknown") for report in reports}
     )
-    symbol = st.selectbox("Filter saved instrument", ["All instruments", *symbols])
-    cards_tab, reports_tab, watchlist_tab = st.tabs(
-        ["Evidence cards", "Analyst reports", "Research watchlist"]
-    )
     with cards_tab:
+        symbol = st.selectbox(
+            "Filter saved instrument", ["All instruments", *symbols], key="saved_evidence_filter"
+        )
         cards = [
             card for card in evidence if symbol == "All instruments" or card.get("symbol") == symbol
         ]
@@ -112,8 +115,6 @@ def saved_research() -> None:
                 color="orange",
             )
             render_evidence(selected)
-            if selected.get("assessment"):
-                render_assessment(selected)
             st.download_button(
                 "Export saved evidence",
                 json_download(selected),
@@ -121,8 +122,11 @@ def saved_research() -> None:
                 mime="application/json",
             )
         else:
-            st.info("Build an evidence card in Overview to start your research history.")
+            st.info("Build an evidence card in the stock desk Evidence tab.")
     with reports_tab:
+        symbol = st.selectbox(
+            "Filter saved instrument", ["All instruments", *symbols], key="saved_report_filter"
+        )
         items = [
             report
             for report in reports
@@ -148,7 +152,7 @@ def saved_research() -> None:
                 mime="application/json",
             )
         else:
-            st.info("Generate an analyst report in Overview. Rules mode works without a key.")
+            st.info("Generate a report in the stock desk Evidence tab.")
     with watchlist_tab:
         watchlist_editor()
 
@@ -170,24 +174,16 @@ def select_history(symbol: str) -> None:
 def sidebar_navigation() -> None:
     st.sidebar.title("Equity")
     st.sidebar.caption("THE RESEARCH LEDGER")
-    st.sidebar.caption("STOCK DESK")
-    for section, label, icon in [
-        ("Overview", "Stock overview", "space_dashboard"),
-        ("Chart & indicators", "Charts & indicators", "candlestick_chart"),
-        ("Strategies & backtest", "Strategy backtest", "query_stats"),
-        ("Risk / Monte Carlo", "Risk / Monte Carlo", "ssid_chart"),
-    ]:
-        st.sidebar.button(
-            label,
-            icon=f":material/{icon}:",
-            width="stretch",
-            type="primary"
-            if st.session_state.get("workspace_page") == "Stock workspace"
-            and st.session_state.get("stock_section", "Overview") == section
-            else "tertiary",
-            on_click=go_stock_section,
-            args=(section,),
-        )
+    st.sidebar.button(
+        "Stock desk",
+        icon=":material/candlestick_chart:",
+        width="stretch",
+        type="primary"
+        if st.session_state.get("workspace_page", "Stock workspace") == "Stock workspace"
+        else "tertiary",
+        on_click=go_page,
+        args=("Stock workspace",),
+    )
     groups = {
         "RESEARCH": {
             "Stock ideas": "analytics",
@@ -224,16 +220,6 @@ def go_stock_section(section: str) -> None:
 
 
 def sidebar_workspace(dataset: dict | None) -> None:
-    if dataset:
-        st.sidebar.caption("CURRENT RESEARCH")
-        st.sidebar.markdown(f"**{dataset['symbol']}**")
-        first = dataset["candles"][dataset.get("window_start", 0)]["timestamp"][:10]
-        st.sidebar.caption(f"{first} → {dataset['candles'][-1]['timestamp'][:10]} · Daily")
-        st.sidebar.caption(
-            "Backtest ready · explore risk next"
-            if st.session_state.get("backtests")
-            else "Choose a rule in Strategy backtest to begin."
-        )
     if dataset and st.sidebar.button(
         "Save instrument to watchlist", icon=":material/bookmark_add:", width="stretch"
     ):
@@ -247,7 +233,7 @@ def sidebar_workspace(dataset: dict | None) -> None:
         if safe_storage(save_watchlist_item, dataset["symbol"], source):
             st.toast("Instrument saved to your research watchlist.", icon=":material/bookmark:")
     entries = safe_storage(storage.get_setting, "research_watchlist", default=[]) or []
-    with st.sidebar.expander(f"Research watchlist · {len(entries)}", expanded=True):
+    with st.sidebar.expander(f"Research watchlist · {len(entries)}", expanded=False):
         if not entries:
             st.caption("Save your current instrument or a stock from the catalogue.")
         for item in entries[-4:]:
@@ -281,15 +267,3 @@ def sidebar_workspace(dataset: dict | None) -> None:
                 on_click=go_page,
                 args=("Saved research",),
             )
-    st.sidebar.caption("CONNECTIONS")
-    st.sidebar.caption(
-        "Broker · Token configured, unverified"
-        if os.getenv("UPSTOX_ACCESS_TOKEN")
-        else "Broker · Not connected"
-    )
-    st.sidebar.caption(
-        "OpenRouter · Key configured, unverified"
-        if os.getenv("OPENROUTER_API_KEY")
-        else "OpenRouter · Not configured"
-    )
-    st.sidebar.caption("Level 2/3 · Deferred")

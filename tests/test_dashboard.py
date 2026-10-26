@@ -14,7 +14,26 @@ def button(app, label):
 
 
 def navigate(app, page):
-    next(item for item in app.selectbox if item.label == "Workspace").set_value(page).run()
+    sections = {
+        "Overview": "Overview",
+        "Market analysis": "Chart & indicators",
+        "Backtesting": "Strategies & backtest",
+        "Validation": "Validation",
+        "Monte Carlo": "Risk / Monte Carlo",
+        "Assistant": "Assistant",
+        "Evidence": "Evidence & reports",
+    }
+    if page in sections:
+        button(app, "Stock desk").click().run()
+        next(
+            item for item in app.get("button_group") if item.label == "Research section"
+        ).set_value(sections[page]).run()
+        if page == "Monte Carlo":
+            next(item for item in app.radio if item.label == "Simulation focus").set_value(
+                "Stock price scenarios"
+            ).run()
+    else:
+        button(app, page).click().run()
     assert not app.exception
 
 
@@ -154,7 +173,10 @@ def test_accounting_and_validation_offline_flow(tmp_path, monkeypatch):
     assert not app.exception
     assert len(storage.get_setting("validation_studies")) == 1
     reopened = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
-    navigate(reopened, "Validation")
+    navigate(reopened, "Saved research")
+    next(item for item in reopened.radio if item.label == "Study type").set_value(
+        "Validation"
+    ).run()
     assert any(item.label == "Saved validation study" for item in reopened.selectbox)
     assert not reopened.exception
     # Loading another source clears the current study, while persisted records remain intact.
@@ -169,6 +191,7 @@ def test_research_workflow_and_dataset_invalidation(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=30).run()
     assert not app.exception
+    navigate(app, "Evidence")
     button(app, "Build evidence card").click().run()
     assert not app.exception
     assert app.session_state["evidence"]["data_quality"]["synthetic"]
@@ -317,8 +340,8 @@ def test_watchlist_and_indicator_presets_survive_new_session(tmp_path, monkeypat
     assert not app.exception
     assert storage.get_setting("research_watchlist")[0]["symbol"] == SYMBOLS[0]
     assert storage.get_watchlist() == SYMBOLS  # Research bookmarks do not reconfigure the worker.
-    button(app, "Explore market analysis").click().run()
-    assert app.session_state["workspace_page"] == "Market analysis"
+    navigate(app, "Market analysis")
+    assert app.session_state["workspace_page"] == "Stock workspace"
     next(item for item in app.radio if item.label == "Chart workspace").set_value(
         "Indicator lab"
     ).run()
@@ -350,3 +373,25 @@ def test_watchlist_and_indicator_presets_survive_new_session(tmp_path, monkeypat
     button(reopened, "Remove from research watchlist").click().run()
     assert not reopened.exception
     assert storage.get_setting("research_watchlist") == []
+
+
+def test_simplified_navigation_preserves_assistant_settings_and_both_chart_choices():
+    app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
+    assert not any(item.label == "Workspace" for item in app.selectbox)
+    assert not any(item.label == "Analysis provider" for item in app.selectbox)
+    navigate(app, "Settings")
+    provider = next(item for item in app.selectbox if item.label == "Analysis provider")
+    provider.set_value(provider.options[2]).run()
+    next(item for item in app.text_input if item.label == "Installed model name").set_value(
+        "local-test-model"
+    ).run()
+    navigate(app, "Market analysis")
+    assert app.session_state["assistant_selection"] == ("ollama", "local-test-model")
+    chart = next(item for item in app.radio if item.label == "Chart workspace")
+    assert "Research chart" in chart.options and "TradingView widget" in chart.options
+    assert app.get("iframe")
+    navigate(app, "Settings")
+    assert (
+        next(item for item in app.text_input if item.label == "Installed model name").value
+        == "local-test-model"
+    )

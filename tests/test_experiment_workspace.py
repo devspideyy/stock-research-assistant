@@ -82,7 +82,9 @@ def test_risk_is_visible_before_backtest_and_complete_experiment_reopens(monkeyp
 
     monkeypatch.setattr(ui_helpers, "add_replay", no_animation)
     app = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
-    click(app, "Risk / Monte Carlo")
+    next(item for item in app.get("button_group") if item.label == "Research section").set_value(
+        "Risk / Monte Carlo"
+    ).run()
     assert any("First run a backtest" in item.value for item in app.info)
     click(app, "Set up a backtest")
     next(item for item in app.number_input if item.label == "Starting capital").set_value(200000.0)

@@ -22,7 +22,8 @@ def import_backtest_for_validation() -> None:
         "requests": {k: v["_provenance"] for k, v in st.session_state.backtests.items()},
     }
     st.session_state.pop("validation_study", None)
-    st.session_state.workspace_page = "Validation"
+    st.session_state.workspace_page = "Stock workspace"
+    st.session_state.stock_section = "Validation"
 
 
 def cost_model_selector(key: str, dataset: dict | None = None) -> str:
@@ -217,29 +218,27 @@ def validation_lab(dataset: dict) -> None:
         except (RuntimeError, ValueError, OSError) as exc:
             st.error(str(exc))
     current = st.session_state.get("validation_study")
-    study_tab, history_tab = st.tabs(["Current study", "Saved studies"])
-    with study_tab:
-        if current:
-            render_study(current)
-            if st.button("Save validation study", icon=":material/bookmark_add:"):
-                if safe_storage(save_study, current):
-                    st.toast("Study saved locally.")
-        else:
-            st.info("Run a study to see fold consistency and cost sensitivity.")
-    with history_tab:
-        studies = safe_storage(storage.get_setting, "validation_studies", default=[]) or []
-        if studies:
-            study = st.selectbox(
-                "Saved validation study",
-                studies,
-                format_func=lambda s: f"{s['symbol']} · {s['created_at'][:16]} · {s['id']}",
-            )
-            st.caption(
-                "Saved snapshot; its inputs may differ from the currently selected data. Most recent 10 retained."
-            )
-            render_study(study, key="saved")
-        else:
-            st.caption("Save a completed study to retain it across sessions.")
+    if current:
+        render_study(current)
+        if st.button("Save validation study", icon=":material/bookmark_add:"):
+            if safe_storage(save_study, current):
+                st.toast("Study saved locally.")
+    else:
+        st.info("Run a study to see fold consistency and cost sensitivity.")
+
+
+def saved_validation_studies() -> None:
+    studies = safe_storage(storage.get_setting, "validation_studies", default=[]) or []
+    if not studies:
+        st.info("No saved validation studies yet.")
+        return
+    study = st.selectbox(
+        "Saved validation study",
+        studies,
+        format_func=lambda s: f"{s['symbol']} / {s['created_at'][:16]} / {s['id']}",
+    )
+    st.caption("Saved snapshot; prices and settings may differ from the current stock.")
+    render_study(study, key="saved")
 
 
 def render_study(study: dict, key: str = "current") -> None:

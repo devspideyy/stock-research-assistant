@@ -160,9 +160,12 @@ def test_offline_quant_ui_and_paper_setup_do_not_need_keys(monkeypatch):
     assert not app.exception
     button(app, "Compare fixed strategy across stocks").click().run()
     assert not app.exception and len(app.session_state["cohort_study"]["rows"]) >= 1
-    next(item for item in app.radio if item.label == "Quant research view").set_value(
-        "Portfolio"
-    ).run()
+    button(app, "Save comparison study").click().run()
+    button(app, "Saved research").click().run()
+    assert not app.exception
+    assert any(item.label == "Saved quant study" for item in app.selectbox)
+    button(app, "Use saved comparison for portfolio research").click().run()
+    assert app.session_state["quant_view"] == "Portfolio"
     button(app, "Evaluate portfolio risk").click().run()
     assert not app.exception and app.session_state["portfolio_study"]["portfolios"]
     button(app, "Paper journal").click().run()

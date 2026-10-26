@@ -73,12 +73,7 @@ def widget_html(symbol: str, interval: str = "D", theme: str = "light") -> str:
 
 
 def tradingview_chart(dataset: dict) -> None:
-    st.subheader("TradingView market chart")
-    st.caption("EXTERNAL MARKET VIEW / DATA PROVIDED BY TRADINGVIEW")
-    st.info(
-        "This chart uses TradingView's available market data. Your historical research window, "
-        "backtests and Monte Carlo continue to use the project's supplied prices."
-    )
+    st.caption("TradingView data / independent of research backtests")
     if st.session_state.get("tv_research_stock") != dataset["symbol"]:
         st.session_state.tv_research_stock = dataset["symbol"]
         st.session_state.tv_symbol = suggested_symbol(dataset)
@@ -102,24 +97,20 @@ def tradingview_chart(dataset: dict) -> None:
         except ValueError as exc:
             st.error(str(exc))
             return
-    st.caption(
-        "Indian widget coverage is limited: BSE is listed as end-of-day; NSE may be unavailable. "
-        "If a listing fails, verify the company's BSE ticker or open TradingView directly. "
-        "Historical ticker names may have changed."
-    )
-    if not request:
-        st.caption(
-            "Choose a listing and load the chart. No TradingView login, API key or paid plan is required."
+    if request:
+        components.html(widget_html(**request), height=660, scrolling=False)
+        st.link_button(
+            "Open this chart on TradingView", chart_url(request["symbol"]), width="stretch"
         )
-        return
-    st.markdown(f"**External chart: {request['symbol']}** · Research stock: {dataset['symbol']}")
-    components.html(widget_html(**request), height=660, scrolling=False)
-    st.link_button("Open this chart on TradingView", chart_url(request["symbol"]), width="stretch")
-    st.caption(
-        "If the embedded chart stays blank or says the symbol is unavailable, use the link above. "
-        "Internet access is required; any exchange delay or market status is supplied by TradingView."
-    )
+    else:
+        st.caption("Choose a listing and load the widget. No API key required.")
     with st.expander("Chart source & availability"):
+        st.caption(
+            "Indian widget coverage is limited. BSE is listed as end-of-day; NSE may be unavailable. Check the exchange-qualified ticker if the chart is blank."
+        )
+        st.caption(
+            "Internet is required. Exchange delays and market status come from TradingView; research calculations keep using local prices."
+        )
         st.markdown(
             "[Widget data coverage](https://www.tradingview.com/widget-docs/markets/asia-pacific/) · "
             "[TradingView data FAQ](https://www.tradingview.com/widget-docs/faq/data/)"

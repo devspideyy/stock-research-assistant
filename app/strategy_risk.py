@@ -15,11 +15,6 @@ from app.ui_helpers import json_download, number, percent, simulation_chart, ter
 def strategy_risk(
     dataset: dict, results: dict, settings: dict, *, label: str | None = None
 ) -> None:
-    st.markdown("### Strategy risk, in context")
-    st.caption(
-        "Explore possible investment outcomes from this strategy's historical net returns. "
-        "Cash days and submitted costs are included."
-    )
     if settings.get("session_gaps_present"):
         st.warning(
             "Daily-return Monte Carlo is withheld for gap-overridden runs. Choose a complete evaluation window first."
