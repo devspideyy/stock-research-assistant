@@ -6,7 +6,7 @@ import streamlit as st
 def apply_style() -> None:
     st.html("""
     <style>
-    .stMainBlockContainer {max-width: 1450px; padding-top: 1.4rem; padding-bottom: 3rem;}
+    .stMainBlockContainer {max-width: 1450px; padding-top: 4.5rem; padding-bottom: 3rem;}
     h1 {letter-spacing: -.035em; line-height: 1.15;}
     h2, h3 {letter-spacing: -.02em;}
     [data-testid="stMetric"] {background: #FFFCF5; border-color: #DED7C8; padding: 1rem;}
@@ -19,7 +19,7 @@ def apply_style() -> None:
     [data-testid="stSegmentedControl"] button {font-size: .85rem; padding: .4rem .7rem;}
     [data-testid="stDataFrame"] {border: 1px solid #DED7C8; border-radius: 5px;}
     @media (max-width: 800px) {
-      .stMainBlockContainer {padding: 1.1rem 1rem 2rem;}
+      .stMainBlockContainer {padding: 4.5rem 1rem 2rem;}
       h1 {font-size: 2rem !important;}
       [data-testid="stMetric"] {padding: .7rem;}
       [data-testid="stSegmentedControl"] button {padding: .35rem .5rem;}
