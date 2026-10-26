@@ -19,7 +19,7 @@ from app.research_protocol import (
     latest_complete_window,
 )
 from app.ui_helpers import chart_layout, percent, json_download
-from app.workspace import safe_storage
+from app.workspace import safe_storage, remember_research_period
 
 
 def use_complete_window(dataset: dict) -> None:
@@ -30,6 +30,32 @@ def use_complete_window(dataset: dict) -> None:
         date.fromisoformat(dataset["candles"][-1]["timestamp"][:10]),
     )
 
+    remember_research_period(dataset["symbol"])
+
+
+def complete_window_recovery(
+    dataset: dict, *, key: str, label="Use latest complete window"
+) -> None:
+    if st.session_state.get("data_source") != "Historical library":
+        st.caption(
+            "Open Historical library to select a different research window; saved experiments keep their original prices."
+        )
+        return
+    try:
+        complete = latest_complete_window(dataset, minimum=30)
+    except ValueError:
+        st.caption(
+            "No complete trailing window of 30 sessions is available. Review the source or choose different dates."
+        )
+        return
+    first = complete["candles"][complete.get("window_start", 0)]["timestamp"][:10]
+    last = complete["candles"][-1]["timestamp"][:10]
+    count = len(complete["candles"]) - complete.get("window_start", 0)
+    st.caption(
+        f"Complete window: {first} to {last} / {count} daily observations. Select to save these dates for this stock."
+    )
+    st.button(label, key=key, on_click=use_complete_window, args=(dataset,), type="primary")
+
 
 def source_health(dataset: dict) -> None:
     report = quality_report(dataset)
@@ -39,20 +65,7 @@ def source_health(dataset: dict) -> None:
             f"{len(report['missing_reference_sessions'])} missing reference sessions and "
             f"{len(report['long_gaps'])} long gaps. These prices are not filled automatically."
         )
-        try:
-            complete = latest_complete_window(dataset, minimum=30)
-        except ValueError:
-            st.caption(
-                "No complete trailing window of 30 sessions is available. Review the source or choose different dates."
-            )
-        else:
-            first = complete["candles"][complete.get("window_start", 0)]["timestamp"][:10]
-            last = complete["candles"][-1]["timestamp"][:10]
-            count = len(complete["candles"]) - complete.get("window_start", 0)
-            st.caption(
-                f"Complete window available: {first} to {last} / {count} daily observations."
-            )
-            st.button("Use latest complete window", on_click=use_complete_window, args=(dataset,))
+        complete_window_recovery(dataset, key="source_window_recovery")
     with st.expander("Data quality and price basis"):
         st.caption(
             "Adjusted research units"

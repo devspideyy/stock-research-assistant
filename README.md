@@ -113,6 +113,11 @@ connection configuration. **Saved research** groups experiments, comparison and
 validation studies, evidence cards, reports and the research watchlist. Detailed
 methods and raw records are available in expandable sections.
 
+If a backtest is blocked by gaps, use **Switch to complete dates** below its
+error, then run it again. The chosen stock/date range is saved locally and reused
+by new browser sessions. Source prices remain unchanged; no missing prices are
+invented and no gap override is enabled automatically.
+
 ## Integrated research chart and quant tools
 
 **Stock desk → Charts → Research chart** uses locally bundled TradingView Lightweight Charts

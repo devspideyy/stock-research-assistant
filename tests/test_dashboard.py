@@ -428,7 +428,8 @@ def test_backtest_gap_recovery_uses_complete_prices_without_an_override(monkeypa
     button(app, "Run strategy comparison").click().run()
     assert any("missing or invalid" in item.value for item in app.error)
     assert "backtests" not in app.session_state
-    button(app, "Use latest complete window").click().run()
+    assert any(item.label == "Switch to complete dates" for item in app.button)
+    button(app, "Switch to complete dates").click().run()
     assert not app.exception
     assert app.date_input[0].value[0].isoformat() == dates[missing_index + 1]
     button(app, "Run strategy comparison").click().run()
@@ -437,3 +438,19 @@ def test_backtest_gap_recovery_uses_complete_prices_without_an_override(monkeypa
     assert app.session_state["experiment_settings"]["allow_data_gaps"] is False
     assert app.session_state["experiment_settings"]["session_gaps_present"] is False
     assert path.read_bytes() == original
+
+    reopened = AppTest.from_file(str(ROOT / "app/dashboard.py"), default_timeout=40).run()
+    assert not reopened.exception
+    assert reopened.date_input[0].value == app.date_input[0].value
+    navigate(reopened, "Backtesting")
+    button(reopened, "Run strategy comparison").click().run()
+    assert not reopened.exception and not reopened.error
+    assert reopened.session_state["experiment_settings"]["session_gaps_present"] is False
+    # A changed source range must not load an out-of-bounds remembered preference.
+    from app.workspace import saved_research_period
+    from datetime import date
+
+    assert saved_research_period("GAP", (date(2019, 1, 1), date(2019, 12, 31))) == (
+        date(2019, 1, 1),
+        date(2019, 12, 31),
+    )

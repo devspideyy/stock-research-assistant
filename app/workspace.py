@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 
 import pandas as pd
 import streamlit as st
@@ -18,6 +19,25 @@ def safe_storage(callable_, *args, default=None, **kwargs):
     except (RuntimeError, OSError, sqlite3.Error) as exc:
         st.warning(f"Local storage is unavailable: {exc}")
         return default
+
+
+def saved_research_period(symbol: str, bounds: tuple) -> tuple:
+    saved = safe_storage(storage.get_setting, "research_period_" + symbol, default=[])
+    try:
+        start, end = (date.fromisoformat(value) for value in saved)
+        if bounds[0] <= start < end <= bounds[1]:
+            return start, end
+    except (TypeError, ValueError):
+        pass
+    return bounds
+
+
+def remember_research_period(symbol: str) -> None:
+    period = st.session_state.get("period_" + symbol, ())
+    if len(period) == 2:
+        safe_storage(
+            storage.set_setting, "research_period_" + symbol, [d.isoformat() for d in period]
+        )
 
 
 def save_watchlist_item(symbol: str, source: str, instrument_key: str = "") -> bool:

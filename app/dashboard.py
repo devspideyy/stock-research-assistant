@@ -55,7 +55,7 @@ from app.engine_bridge import (
 )
 from app.monitor import run_once
 from app.stock_workspace import stock_workspace
-from app.evaluation_ui import source_health
+from app.evaluation_ui import source_health, complete_window_recovery
 from app.recommendations import stock_ideas, strategy_guide
 from app.research_labs import indicator_lab, stock_catalogue
 from app.services import build_evidence, generate_report
@@ -73,6 +73,8 @@ from app.ui_helpers import (
 )
 from app.workspace import (
     safe_storage,
+    saved_research_period,
+    remember_research_period,
     saved_research,
     sidebar_navigation,
     sidebar_workspace,
@@ -223,10 +225,12 @@ def select_dataset() -> dict | None:
                 )
                 period = st.date_input(
                     "Research window",
-                    value=bounds,
+                    value=saved_research_period(symbol, bounds),
                     min_value=bounds[0],
                     max_value=bounds[1],
                     key="period_" + symbol,
+                    on_change=remember_research_period,
+                    args=(symbol,),
                 )
                 if len(period) != 2:
                     st.info("Choose both dates to open the research window.")
@@ -793,6 +797,10 @@ def backtest_lab(dataset: dict) -> None:
             options["session_gaps_present"] = not quality["eligible"]
         except ValueError as exc:
             st.error(str(exc))
+            if "missing or invalid" in str(exc):
+                complete_window_recovery(
+                    dataset, key="blocked_backtest_recovery", label="Switch to complete dates"
+                )
             return
         progress = st.progress(0, text=f"Preparing {len(selection)} strategies…")
         for index, label in enumerate(selection):
